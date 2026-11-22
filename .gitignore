@@ -1,16 +1,5 @@
-# Compiled class file
+# Compiled class file and Package Files
 *.class
-
-# Log file
-*.log
-
-# BlueJ files
-*.ctxt
-
-# Mobile Tools for Java (J2ME)
-.mtj.tmp/
-
-# Package Files #
 *.jar
 *.war
 *.nar
@@ -19,6 +8,73 @@
 *.tar.gz
 *.rar
 
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+# Log file and temporary files and virtual machine crash logs
+*.log
 hs_err_pid*
 replay_pid*
+
+# Gradle
+.gradle/
+**/bin/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# BlueJ files
+*.ctxt
+
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+# IDE JetBrains
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# node_modules
+node_modules/
+
+# Turborepo
+.turbo/
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
+# React Native / Electron
+.expo/
+android/app/build/
+*.keystore
+release/
+
+# AWS / secretos (repositorio publico)
+.aws/
+*.pem
+*.key
+credentials
+
+# LocalStack
+.localstack/
+volume/
+
+# OS / herramientas
+.DS_Store
+Thumbs.db
+.agents/
+.gemini/
