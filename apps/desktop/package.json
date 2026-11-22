@@ -1,0 +1,11 @@
+{
+  "name": "@solidariaplus/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "echo \"build: @solidariaplus/desktop\"",
+    "dev": "echo \"dev: @solidariaplus/desktop\"",
+    "lint": "echo \"lint: @solidariaplus/desktop\"",
+    "clean": "echo \"clean: @solidariaplus/desktop\""
+  }
+}

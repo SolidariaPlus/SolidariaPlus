@@ -1,0 +1,1 @@
+# @solidariaplus/desktop

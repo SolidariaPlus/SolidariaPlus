@@ -1,0 +1,11 @@
+{
+  "name": "@solidariaplus/web",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "echo \"build: @solidariaplus/web\"",
+    "dev": "echo \"dev: @solidariaplus/web\"",
+    "lint": "echo \"lint: @solidariaplus/web\"",
+    "clean": "echo \"clean: @solidariaplus/web\""
+  }
+}
