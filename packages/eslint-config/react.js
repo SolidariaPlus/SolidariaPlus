@@ -3,7 +3,7 @@ import globals from "globals";
 import tseslint from "typescript-eslint";
 import base from "./base.js";
 
-/** Configuración para paquetes React (web, desktop renderer, ui, mobile). */
+/** Config for React packages (web, desktop renderer, ui, mobile). */
 export default tseslint.config(...base, {
   files: ["**/*.{ts,tsx}"],
   languageOptions: {

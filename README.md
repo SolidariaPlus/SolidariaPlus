@@ -80,10 +80,38 @@ Services opt into extra modules without versions, e.g.
   (`commitlint.config.js`, run by the `commit-msg` hook).
 - **Pre-commit** (`lefthook.yml`): Prettier on staged TS/JS/JSON/YAML/MD files and `spotlessApply` on staged
   Java/Kotlin DSL files; fixed files are re-staged automatically.
-- **PR titles** must contain the Jira key (`.github/workflows/ci.yml` → `pr-title`).
+- **Branches**: the name Jira creates, `feature/kan-<number>-<summary>` (`^feature/kan-[0-9]+-[a-z0-9-]{1,40}$`).
+- **PR titles**: Conventional Commits with the Jira key at the start of the subject, e.g.
+  `feat(credit): KAN-42 add scoring endpoint`.
 - **Releases**: release-please per component (`release-please-config.json`, `.release-please-manifest.json`).
 
 ## CI
 
-`.github/workflows/ci.yml` runs two jobs: `frontend` (`pnpm install --frozen-lockfile` +
-`turbo run lint typecheck build test`) and `backend` (`./gradlew build` on Temurin 21).
+Every pull request into `dev`, `qa` and `main` runs two workflows on GitHub-hosted runners. Their checks are
+required status checks in the rulesets of the three branches, so a PR that breaks any gate cannot be merged.
+
+`.github/workflows/pull-request.yml`: `pr-title` and `branch-name` enforce the conventions above. Dependabot and
+release-please PRs are exempt, and so are promotion PRs `dev` → `qa` and `qa` → `main` from the branch check.
+
+`.github/workflows/ci.yml` runs each job only for the affected packages; skipped jobs count as passing:
+
+| Job            | Runs when                             | Checks                                                                   |
+| -------------- | ------------------------------------- | ------------------------------------------------------------------------ |
+| `changes`      | always                                | Detects affected areas and Gradle services                               |
+| `format`       | always                                | `pnpm format:check` (Prettier)                                           |
+| `frontend`     | `apps/`, `packages/`, root JS files   | `turbo run lint typecheck build --affected`, unit tests with coverage    |
+| `backend`      | affected services                     | `check` (Spotless, Checkstyle, unit tests) and JaCoCo coverage           |
+| `architecture` | affected services                     | `architectureTest` (ArchUnit rules tagged `architecture`)                |
+| `codeql`       | always                                | CodeQL for Actions, Java/Kotlin and JavaScript/TypeScript                |
+| `trivy-config` | Dockerfiles, compose, Helm, Terraform | `trivy config` (HIGH, CRITICAL)                                          |
+| `trivy-image`  | affected services                     | Builds each service image and runs `trivy image` (HIGH, CRITICAL, fixed) |
+| `compose`      | `compose.yaml`                        | `docker compose config`                                                  |
+| `helm`         | `deploy/helm/`, service `helm/`       | `helm lint --strict` and `kubeconform` on the rendered manifests         |
+| `terraform`    | `infra/terraform/`                    | `terraform fmt -check`, `terraform validate`, `tflint`                   |
+| `ci-passed`    | always                                | Fails when any job above failed or was cancelled                         |
+
+Changes to `build-logic/`, `gradle/`, `libs/`, `settings.gradle.kts`, `.tool-versions` or `ci.yml` itself mark
+every service as affected. Run the backend gates locally with `./gradlew check` (it includes `architectureTest`).
+
+Dependabot (`.github/dependabot.yml`) opens weekly grouped updates against `dev`, and secret scanning with push
+protection is enabled on the repository.

@@ -1,5 +1,5 @@
 # MS-16 · regulatory-supervision-service · Java 21 / Spring Boot
-# Build context: raíz del repositorio
+# Build context: repository root
 #   docker build -f services/d06-aml-audit/regulatory-supervision-service/Dockerfile -t solidariaplus/regulatory-supervision-service .
 
 FROM eclipse-temurin:21-jdk AS builder

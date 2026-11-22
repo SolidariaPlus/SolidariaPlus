@@ -1,4 +1,4 @@
-// Microservicio Spring Boot desplegable (services/<dominio>/<servicio>).
+// Deployable Spring Boot microservice (services/<domain>/<service>).
 import org.gradle.accessors.dm.LibrariesForLibs
 
 plugins {
@@ -9,8 +9,8 @@ plugins {
 
 val libs = the<LibrariesForLibs>()
 
-// BOMs adicionales al de Spring Boot: cada servicio declara los módulos que necesite
-// (p.ej. libs.spring.cloud.aws.starter.sqs, libs.bundles.resilience, libs.flyway.core) sin versión.
+// BOMs in addition to Spring Boot's: each service declares the modules it needs
+// (e.g. libs.spring.cloud.aws.starter.sqs, libs.bundles.resilience, libs.flyway.core) without a version.
 dependencyManagement {
     imports {
         mavenBom(libs.spring.cloud.aws.bom.get().toString())
@@ -30,7 +30,7 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
-// Nombre de artefacto fijo para que el Dockerfile sea idéntico en todos los servicios
+// Fixed artifact name so the Dockerfile is identical across services
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
     archiveFileName = "app.jar"
 }

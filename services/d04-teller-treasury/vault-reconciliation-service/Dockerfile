@@ -1,5 +1,5 @@
 # MS-09 · vault-reconciliation-service · Java 21 / Spring Boot
-# Build context: raíz del repositorio
+# Build context: repository root
 #   docker build -f services/d04-teller-treasury/vault-reconciliation-service/Dockerfile -t solidariaplus/vault-reconciliation-service .
 
 FROM eclipse-temurin:21-jdk AS builder

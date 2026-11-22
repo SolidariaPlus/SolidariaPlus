@@ -5,4 +5,4 @@ terraform 1.17.2
 helm 4.3.2
 kubectl 1.37.2
 awscli 2.42.1
-# docker 29.x (Docker Desktop / Engine; no gestionado por asdf/mise)
+# docker 29.x (Docker Desktop / Engine; not managed by asdf/mise)

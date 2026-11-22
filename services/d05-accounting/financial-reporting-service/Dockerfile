@@ -1,5 +1,5 @@
 # MS-13 · financial-reporting-service · Java 21 / Spring Boot
-# Build context: raíz del repositorio
+# Build context: repository root
 #   docker build -f services/d05-accounting/financial-reporting-service/Dockerfile -t solidariaplus/financial-reporting-service .
 
 FROM eclipse-temurin:21-jdk AS builder

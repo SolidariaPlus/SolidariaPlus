@@ -1,5 +1,5 @@
 # MS-03 · core-savings-service · Java 21 / Spring Boot
-# Build context: raíz del repositorio
+# Build context: repository root
 #   docker build -f services/d02-savings/core-savings-service/Dockerfile -t solidariaplus/core-savings-service .
 
 FROM eclipse-temurin:21-jdk AS builder

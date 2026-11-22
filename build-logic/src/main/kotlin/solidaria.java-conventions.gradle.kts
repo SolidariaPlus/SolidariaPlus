@@ -1,5 +1,5 @@
-// Convenciones comunes a todo proyecto Java del monorepo:
-// toolchain Java 21, JUnit 5, JaCoCo, Spotless (Palantir Java Format) y Checkstyle.
+// Shared conventions for every Java project in the monorepo:
+// Java 21 toolchain, JUnit 5, JaCoCo, ArchUnit architecture tests, Spotless (Palantir Java Format) and Checkstyle.
 import org.gradle.accessors.dm.LibrariesForLibs
 
 plugins {
@@ -24,9 +24,29 @@ tasks.withType<JavaCompile>().configureEach {
     options.compilerArgs.addAll(listOf("-parameters", "-Xlint:all", "-Xlint:-processing"))
 }
 
-tasks.withType<Test>().configureEach {
-    useJUnitPlatform()
+val architectureTag = "architecture"
+
+tasks.named<Test>("test") {
+    useJUnitPlatform {
+        excludeTags(architectureTag)
+    }
     finalizedBy(tasks.named("jacocoTestReport"))
+}
+
+val architectureTest =
+    tasks.register<Test>("architectureTest") {
+        description = "Runs the ArchUnit architecture rules."
+        group = LifecycleBasePlugin.VERIFICATION_GROUP
+        testClassesDirs = sourceSets["test"].output.classesDirs
+        classpath = sourceSets["test"].runtimeClasspath
+        useJUnitPlatform {
+            includeTags(architectureTag)
+        }
+        shouldRunAfter(tasks.named("test"))
+    }
+
+tasks.named("check") {
+    dependsOn(architectureTest)
 }
 
 tasks.named<JacocoReport>("jacocoTestReport") {
@@ -37,7 +57,7 @@ tasks.named<JacocoReport>("jacocoTestReport") {
     }
 }
 
-// ---- Formato: `./gradlew spotlessApply` corrige, `spotlessCheck` (en `check`) valida ----
+// ---- Formatting: `./gradlew spotlessApply` fixes, `spotlessCheck` (part of `check`) verifies ----
 spotless {
     java {
         target("src/**/*.java")
@@ -53,7 +73,7 @@ spotless {
     }
 }
 
-// ---- Análisis estático: reglas en config/checkstyle/checkstyle.xml (raíz del repo) ----
+// ---- Static analysis: rules in config/checkstyle/checkstyle.xml (repository root) ----
 checkstyle {
     toolVersion = libs.versions.checkstyle.get()
     configDirectory = rootProject.layout.projectDirectory.dir("config/checkstyle")

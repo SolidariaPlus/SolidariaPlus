@@ -1,4 +1,4 @@
-// Librerías Java compartidas (libs/*).
+// Shared Java libraries (libs/*).
 import org.gradle.accessors.dm.LibrariesForLibs
 
 plugins {

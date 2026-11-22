@@ -1,5 +1,5 @@
 # MS-11 · general-ledger-service · Java 21 / Spring Boot
-# Build context: raíz del repositorio
+# Build context: repository root
 #   docker build -f services/d05-accounting/general-ledger-service/Dockerfile -t solidariaplus/general-ledger-service .
 
 FROM eclipse-temurin:21-jdk AS builder

@@ -1,5 +1,5 @@
 # MS-12 · smart-accounting-rules-service · Java 21 / Spring Boot
-# Build context: raíz del repositorio
+# Build context: repository root
 #   docker build -f services/d05-accounting/smart-accounting-rules-service/Dockerfile -t solidariaplus/smart-accounting-rules-service .
 
 FROM eclipse-temurin:21-jdk AS builder

@@ -8,7 +8,7 @@ on:
 permissions:
   contents: read
   deployments: write
-  id-token: write # OIDC hacia AWS
+  id-token: write # OIDC to AWS
 
 concurrency:
   group: deploy-qa
@@ -17,10 +17,10 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # El nombre "qa" crea un GitHub deployment que .jira/config.yml mapea a "testing" (regla AR-02)
+    # The "qa" environment creates a GitHub deployment that .jira/config.yml maps to "testing" (rule AR-02)
     environment: qa
     steps:
       - uses: actions/checkout@v4
       - name: Deploy to QA
         run: |
-          echo "TODO: build images, push y despliegue a la cuenta AWS de QA (infra/accounts.yml)"
+          echo "TODO: build images, push and deploy to the QA AWS account (infra/accounts.yml)"

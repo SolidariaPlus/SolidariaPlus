@@ -7,8 +7,8 @@ resilience4j = "2.4.0"
 testcontainers = "1.21.4"
 archunit = "1.5.1"
 junit = "5.12.2"
-# Micrometer y Flyway: versión gestionada por el BOM de Spring Boot
-# Calidad de código
+# Micrometer and Flyway: version managed by the Spring Boot BOM
+# Code quality
 spotless = "8.12.0"
 palantir-java-format = "2.103.0"
 ktlint = "1.8.0"
@@ -29,7 +29,7 @@ spring-boot-starter-aop = { module = "org.springframework.boot:spring-boot-start
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
 spring-boot-testcontainers = { module = "org.springframework.boot:spring-boot-testcontainers" }
 
-# Spring Cloud AWS (versiones vía spring-cloud-aws-bom)
+# Spring Cloud AWS (versions from spring-cloud-aws-bom)
 spring-cloud-aws-starter = { module = "io.awspring.cloud:spring-cloud-aws-starter" }
 spring-cloud-aws-starter-sqs = { module = "io.awspring.cloud:spring-cloud-aws-starter-sqs" }
 spring-cloud-aws-starter-sns = { module = "io.awspring.cloud:spring-cloud-aws-starter-sns" }
@@ -39,15 +39,15 @@ spring-cloud-aws-starter-secrets-manager = { module = "io.awspring.cloud:spring-
 spring-cloud-aws-starter-parameter-store = { module = "io.awspring.cloud:spring-cloud-aws-starter-parameter-store" }
 spring-cloud-aws-testcontainers = { module = "io.awspring.cloud:spring-cloud-aws-testcontainers" }
 
-# Resilience4j (versiones vía resilience4j-bom)
+# Resilience4j (versions from resilience4j-bom)
 resilience4j-spring-boot3 = { module = "io.github.resilience4j:resilience4j-spring-boot3" }
 resilience4j-micrometer = { module = "io.github.resilience4j:resilience4j-micrometer" }
 
-# Micrometer (versiones vía Spring Boot)
+# Micrometer (versions from Spring Boot)
 micrometer-registry-prometheus = { module = "io.micrometer:micrometer-registry-prometheus" }
 micrometer-tracing-bridge-otel = { module = "io.micrometer:micrometer-tracing-bridge-otel" }
 
-# Flyway (versiones vía Spring Boot)
+# Flyway (versions from Spring Boot)
 flyway-core = { module = "org.flywaydb:flyway-core" }
 flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql" }
 

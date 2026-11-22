@@ -1,5 +1,5 @@
 # MS-04 · interest-and-contributions-service · Java 21 / Spring Boot
-# Build context: raíz del repositorio
+# Build context: repository root
 #   docker build -f services/d02-savings/interest-and-contributions-service/Dockerfile -t solidariaplus/interest-and-contributions-service .
 
 FROM eclipse-temurin:21-jdk AS builder
