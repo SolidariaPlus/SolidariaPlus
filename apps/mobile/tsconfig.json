@@ -1,0 +1,7 @@
+{
+  "extends": "@solidariaplus/tsconfig/react-native.json",
+  "compilerOptions": {
+    "types": ["jest"]
+  },
+  "include": ["index.ts", "src"]
+}

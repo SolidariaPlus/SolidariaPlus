@@ -1,0 +1,30 @@
+name: promote-prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Tag o SHA ya validado en QA"
+        required: true
+
+permissions:
+  contents: read
+  deployments: write
+  id-token: write
+
+concurrency:
+  group: promote-prod
+  cancel-in-progress: false
+
+jobs:
+  promote-prod:
+    runs-on: ubuntu-latest
+    # Environment "production" (con required reviewers) -> Jira "production" (regla AR-03)
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - name: Promote to Production
+        run: |
+          echo "TODO: promover las imagenes validadas en QA a la cuenta AWS de produccion"

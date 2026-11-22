@@ -1,0 +1,22 @@
+{
+  "services/d01-membership/member-management-service": "0.0.0",
+  "services/d01-membership/smart-kyc-onboarding-service": "0.0.0",
+  "services/d02-savings/core-savings-service": "0.0.0",
+  "services/d02-savings/interest-and-contributions-service": "0.0.0",
+  "services/d03-credit/credit-origination-service": "0.0.0",
+  "services/d03-credit/ml-credit-scoring-service": "0.0.0",
+  "services/d03-credit/portfolio-recovery-service": "0.0.0",
+  "services/d04-teller-treasury/teller-transactions-service": "0.0.0",
+  "services/d04-teller-treasury/vault-reconciliation-service": "0.0.0",
+  "services/d04-teller-treasury/cash-liquidity-forecast-service": "0.0.0",
+  "services/d05-accounting/general-ledger-service": "0.0.0",
+  "services/d05-accounting/smart-accounting-rules-service": "0.0.0",
+  "services/d05-accounting/financial-reporting-service": "0.0.0",
+  "services/d06-aml-audit/ml-fraud-aml-service": "0.0.0",
+  "services/d06-aml-audit/immutable-audit-ledger-service": "0.0.0",
+  "services/d06-aml-audit/regulatory-supervision-service": "0.0.0",
+  "services/d07-identity/identity-access-service": "0.0.0",
+  "apps/web": "0.0.0",
+  "apps/mobile": "0.0.0",
+  "apps/desktop": "0.0.0"
+}

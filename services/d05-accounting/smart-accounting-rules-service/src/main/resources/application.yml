@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: smart-accounting-rules-service
+
+server:
+  port: ${SERVER_PORT:8092}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true

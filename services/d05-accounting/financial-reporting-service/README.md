@@ -1,10 +1,16 @@
 # financial-reporting-service (MS-13)
 
 - Bounded context: `d05-accounting`
-- Stack: Python 3.12
+- Stack: Java 21 · Spring Boot 3
+- Paquete base: `com.solidariaplus.accounting.financialreporting`
+- Puerto local: `8093`
 
 ## Desarrollo local
 
 ```bash
-pnpm turbo run build --filter=@solidariaplus/financial-reporting-service
+./gradlew :financial-reporting-service:bootRun   # levantar el servicio
+./gradlew :financial-reporting-service:test      # tests + reporte JaCoCo
+./gradlew :financial-reporting-service:bootJar   # build/libs/app.jar
 ```
+
+Health check: <http://localhost:8093/actuator/health>

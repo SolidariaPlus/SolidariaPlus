@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: regulatory-supervision-service
+
+server:
+  port: ${SERVER_PORT:8096}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true

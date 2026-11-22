@@ -1,10 +1,16 @@
 # portfolio-recovery-service (MS-07)
 
 - Bounded context: `d03-credit`
-- Stack: Go 1.22
+- Stack: Java 21 · Spring Boot 3
+- Paquete base: `com.solidariaplus.credit.portfoliorecovery`
+- Puerto local: `8087`
 
 ## Desarrollo local
 
 ```bash
-pnpm turbo run build --filter=@solidariaplus/portfolio-recovery-service
+./gradlew :portfolio-recovery-service:bootRun   # levantar el servicio
+./gradlew :portfolio-recovery-service:test      # tests + reporte JaCoCo
+./gradlew :portfolio-recovery-service:bootJar   # build/libs/app.jar
 ```
+
+Health check: <http://localhost:8087/actuator/health>

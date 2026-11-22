@@ -1,9 +1,3 @@
 plugins {
-    java
-}
-
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
+    id("solidaria.spring-boot-service")
 }

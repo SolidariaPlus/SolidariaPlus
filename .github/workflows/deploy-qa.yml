@@ -1,0 +1,26 @@
+name: deploy-qa
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: write
+  id-token: write # OIDC hacia AWS
+
+concurrency:
+  group: deploy-qa
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # El nombre "qa" crea un GitHub deployment que .jira/config.yml mapea a "testing" (regla AR-02)
+    environment: qa
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to QA
+        run: |
+          echo "TODO: build images, push y despliegue a la cuenta AWS de QA (infra/accounts.yml)"

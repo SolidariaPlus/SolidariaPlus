@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: interest-and-contributions-service
+
+server:
+  port: ${SERVER_PORT:8084}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true

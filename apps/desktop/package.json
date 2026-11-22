@@ -2,10 +2,36 @@
   "name": "@solidariaplus/desktop",
   "version": "0.0.0",
   "private": true,
+  "main": "out/main/index.js",
   "scripts": {
-    "build": "echo \"build: @solidariaplus/desktop\"",
-    "dev": "echo \"dev: @solidariaplus/desktop\"",
-    "lint": "echo \"lint: @solidariaplus/desktop\"",
-    "clean": "echo \"clean: @solidariaplus/desktop\""
+    "dev": "electron-vite dev",
+    "build": "tsc --noEmit && electron-vite build",
+    "preview": "electron-vite preview",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "node -e \"require('fs').rmSync('out',{recursive:true,force:true})\""
+  },
+  "dependencies": {
+    "@solidariaplus/ui": "workspace:*",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@solidariaplus/eslint-config": "workspace:*",
+    "@solidariaplus/tsconfig": "workspace:*",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "electron": "^45.4.1",
+    "electron-vite": "^6.0.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
+    "eslint": "^10.15.0",
+    "jsdom": "^31.0.1",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
   }
 }

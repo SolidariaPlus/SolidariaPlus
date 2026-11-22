@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "SolidariaPlus",
+    "slug": "solidariaplus",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "com.solidariaplus.mobile"
+    },
+    "android": {
+      "package": "com.solidariaplus.mobile"
+    },
+    "plugins": ["expo-status-bar"]
+  }
+}
