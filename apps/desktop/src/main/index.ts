@@ -12,7 +12,7 @@ function createWindow(): void {
     },
   });
 
-  // electron-vite expone la URL del dev server en desarrollo
+  // electron-vite exposes the dev server URL during development
   if (process.env["ELECTRON_RENDERER_URL"]) {
     void win.loadURL(process.env["ELECTRON_RENDERER_URL"]);
   } else {

@@ -1,7 +1,7 @@
 # smart-accounting-rules-service (MS-12)
 
 - Bounded context: `d05-accounting`
-- Stack: Java 21 · Spring Boot 3
+- Stack: Java 21 · Spring Boot 4
 - Paquete base: `com.solidariaplus.accounting.smartaccountingrules`
 - Puerto local: `8092`
 

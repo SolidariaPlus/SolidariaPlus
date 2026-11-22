@@ -1,5 +1,5 @@
 # MS-06 · ml-credit-scoring-service · Java 21 / Spring Boot
-# Build context: raíz del repositorio
+# Build context: repository root
 #   docker build -f services/d03-credit/ml-credit-scoring-service/Dockerfile -t solidariaplus/ml-credit-scoring-service .
 
 FROM eclipse-temurin:21-jdk AS builder

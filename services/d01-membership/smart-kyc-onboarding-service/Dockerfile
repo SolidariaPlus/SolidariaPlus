@@ -1,5 +1,5 @@
 # MS-02 · smart-kyc-onboarding-service · Java 21 / Spring Boot
-# Build context: raíz del repositorio
+# Build context: repository root
 #   docker build -f services/d01-membership/smart-kyc-onboarding-service/Dockerfile -t solidariaplus/smart-kyc-onboarding-service .
 
 FROM eclipse-temurin:21-jdk AS builder

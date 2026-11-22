@@ -2,7 +2,7 @@ import type { ButtonHTMLAttributes } from "react";
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement>;
 
-/** Botón base compartido entre web y desktop. */
+/** Base button shared by web and desktop. */
 export function Button({ type = "button", ...props }: ButtonProps) {
   return <button type={type} {...props} />;
 }

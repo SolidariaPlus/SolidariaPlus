@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { App } from "./App";
 
 describe("App (desktop renderer)", () => {
-  it("muestra el título de la app de escritorio", () => {
+  it("renders the desktop app title", () => {
     render(<App />);
     expect(screen.getByRole("heading", { name: /Desktop/ })).toBeDefined();
   });

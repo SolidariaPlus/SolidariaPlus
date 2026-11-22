@@ -1,5 +1,5 @@
 # MS-10 · cash-liquidity-forecast-service · Java 21 / Spring Boot
-# Build context: raíz del repositorio
+# Build context: repository root
 #   docker build -f services/d04-teller-treasury/cash-liquidity-forecast-service/Dockerfile -t solidariaplus/cash-liquidity-forecast-service .
 
 FROM eclipse-temurin:21-jdk AS builder

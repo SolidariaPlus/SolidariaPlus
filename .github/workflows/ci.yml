@@ -2,52 +2,384 @@ name: ci
 
 on:
   pull_request:
-    branches: [main]
+    branches: [qa, main]
   push:
-    branches: [main]
+    branches: [qa, main]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-jobs:
-  pr-title:
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - name: PR title must contain a Jira key (squash merge -> commit on main)
-        env:
-          TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          echo "$TITLE" | grep -Eq '[A-Z][A-Z0-9]+-[0-9]+' \
-            || { echo "::error::El titulo del PR debe incluir la clave Jira (p.ej. SP-123)"; exit 1; }
+env:
+  TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
+  TRIVY_JAVA_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-java-db:1
 
-  # Frontend (apps/*, packages/*) -> pnpm + Turborepo
-  frontend:
+jobs:
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+      iac: ${{ steps.filter.outputs.iac }}
+      compose: ${{ steps.filter.outputs.compose }}
+      helm: ${{ steps.filter.outputs.helm }}
+      terraform: ${{ steps.filter.outputs.terraform }}
+      services: ${{ steps.services.outputs.services }}
+      projects: ${{ steps.services.outputs.projects }}
+      base: ${{ steps.base.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+
+      - name: Resolve base commit
+        id: base
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            base=$(git merge-base "$PR_BASE" HEAD)
+          elif [ -n "$PUSH_BEFORE" ] && ! [[ "$PUSH_BEFORE" =~ ^0+$ ]] && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            base="$PUSH_BEFORE"
+          elif git rev-parse --verify -q HEAD^ >/dev/null; then
+            base=$(git rev-parse HEAD^)
+          else
+            base=$(git hash-object -t tree /dev/null)
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          base: ${{ steps.base.outputs.sha }}
+          filters: |
+            shared: &shared
+              - .github/workflows/ci.yml
+              - .tool-versions
+            frontend:
+              - *shared
+              - apps/**
+              - packages/**
+              - package.json
+              - pnpm-lock.yaml
+              - pnpm-workspace.yaml
+              - turbo.json
+              - .npmrc
+            backend:
+              - *shared
+              - services/**
+              - libs/**
+              - build-logic/**
+              - gradle/**
+              - config/checkstyle/**
+              - settings.gradle.kts
+              - gradle.properties
+              - gradlew
+            iac:
+              - *shared
+              - "**/Dockerfile"
+              - compose.yaml
+              - deploy/**
+              - infra/**
+              - services/*/*/helm/**
+            compose:
+              - *shared
+              - compose.yaml
+            helm:
+              - *shared
+              - deploy/helm/**
+              - services/*/*/helm/**
+            terraform:
+              - *shared
+              - infra/terraform/**
+              - .tflint.hcl
+
+      - name: Compute affected services
+        id: services
+        env:
+          BASE: ${{ steps.base.outputs.sha }}
+        run: |
+          mapfile -t all < <(find services -mindepth 3 -maxdepth 3 -name build.gradle.kts -printf '%h\n' | sort)
+          changed=$(git diff --name-only "$BASE" HEAD)
+          shared='^(\.github/workflows/ci\.yml|\.tool-versions|build-logic/|gradle/|libs/|config/checkstyle/|settings\.gradle\.kts|gradle\.properties|gradlew)'
+          affected=()
+          if grep -Eq "$shared" <<< "$changed"; then
+            affected=("${all[@]}")
+          else
+            for dir in "${all[@]}"; do
+              if grep -q "^$dir/" <<< "$changed"; then affected+=("$dir"); fi
+            done
+          fi
+          services=$(printf '%s\n' "${affected[@]}" | jq -R -s -c 'split("\n") | map(select(length > 0)) | map({path: ., name: (split("/") | last)})')
+          projects=$(jq -r 'map(":" + .name) | join(" ")' <<< "$services")
+          echo "services=$services" >> "$GITHUB_OUTPUT"
+          echo "projects=$projects" >> "$GITHUB_OUTPUT"
+          echo "Affected services: $services"
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .tool-versions
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo run lint typecheck build test
+      - run: pnpm format:check
 
-  # Backend (services/*, libs/*) -> Gradle + Java 21
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    env:
+      TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
+      TURBO_SCM_HEAD: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .tool-versions
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Lint, typecheck and build
+        run: pnpm exec turbo run lint typecheck build --affected
+      - name: Unit tests with coverage
+        run: pnpm exec turbo run test --affected -- --coverage
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: frontend-coverage
+          path: |
+            apps/*/coverage/
+            packages/*/coverage/
+          if-no-files-found: ignore
+
   backend:
+    needs: changes
+    if: needs.changes.outputs.projects != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
         with:
           distribution: temurin
           java-version: 21
-      - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew build --no-daemon
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - name: Format, static analysis, build and unit tests with coverage
+        env:
+          PROJECTS: ${{ needs.changes.outputs.projects }}
+        run: |
+          tasks=()
+          for project in $PROJECTS; do tasks+=("$project:check" "$project:jacocoTestReport"); done
+          ./gradlew "${tasks[@]}" -x architectureTest --continue
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: backend-coverage
+          path: services/*/*/build/reports/jacoco/
+          if-no-files-found: ignore
+
+  architecture:
+    needs: changes
+    if: needs.changes.outputs.projects != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+      - name: Architecture tests
+        env:
+          PROJECTS: ${{ needs.changes.outputs.projects }}
+        run: |
+          tasks=()
+          for project in $PROJECTS; do tasks+=("$project:architectureTest"); done
+          ./gradlew "${tasks[@]}" --continue
+
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, java-kotlin, javascript-typescript]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-extended
+      - uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          category: /language:${{ matrix.language }}
+
+  trivy-config:
+    needs: changes
+    if: needs.changes.outputs.iac == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.76.2
+          cache: true
+      - name: Scan Dockerfiles, Helm charts and Terraform
+        run: trivy config --severity HIGH,CRITICAL --exit-code 1 --skip-dirs node_modules .
+
+  trivy-image:
+    needs: changes
+    if: needs.changes.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build image
+        env:
+          SERVICE_PATH: ${{ matrix.service.path }}
+          SERVICE_NAME: ${{ matrix.service.name }}
+        run: docker build -f "$SERVICE_PATH/Dockerfile" -t "solidariaplus/$SERVICE_NAME:ci" .
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.76.2
+          cache: true
+      - name: Scan image
+        env:
+          SERVICE_NAME: ${{ matrix.service.name }}
+        run: trivy image --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1 "solidariaplus/$SERVICE_NAME:ci"
+
+  compose:
+    needs: changes
+    if: needs.changes.outputs.compose == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate compose.yaml
+        run: |
+          if [ ! -s compose.yaml ]; then
+            echo "compose.yaml is empty, nothing to validate"
+            exit 0
+          fi
+          docker compose -f compose.yaml config --quiet
+
+  helm:
+    needs: changes
+    if: needs.changes.outputs.helm == 'true'
+    runs-on: ubuntu-latest
+    env:
+      KUBECONFORM_VERSION: v0.8.0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Read Helm version
+        id: versions
+        run: echo "helm=v$(awk '$1 == "helm" {print $2}' .tool-versions)" >> "$GITHUB_OUTPUT"
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+        with:
+          version: ${{ steps.versions.outputs.helm }}
+      - name: Install kubeconform
+        run: |
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin kubeconform
+      - name: Helm lint and kubeconform
+        run: |
+          mapfile -t charts < <(find deploy/helm -name Chart.yaml -printf '%h\n' | sort)
+          if [ ${#charts[@]} -eq 0 ]; then
+            echo "No Helm charts found, nothing to validate"
+            exit 0
+          fi
+          mapfile -t services < <(find services -mindepth 3 -maxdepth 3 -type d -name helm | sort)
+          for chart in "${charts[@]}"; do
+            helm dependency build "$chart" >/dev/null 2>&1 || true
+            helm lint --strict "$chart"
+            helm template ci "$chart" | kubeconform -strict -summary -ignore-missing-schemas
+            for values_dir in "${services[@]}"; do
+              for env in qa prod; do
+                args=(-f "$values_dir/values.yaml")
+                [ -f "$values_dir/values-$env.yaml" ] && args+=(-f "$values_dir/values-$env.yaml")
+                echo "::group::$chart with $values_dir ($env)"
+                helm lint --strict "$chart" "${args[@]}"
+                helm template ci "$chart" "${args[@]}" | kubeconform -strict -summary -ignore-missing-schemas
+                echo "::endgroup::"
+              done
+            done
+          done
+
+  terraform:
+    needs: changes
+    if: needs.changes.outputs.terraform == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Read Terraform version
+        id: versions
+        run: echo "terraform=$(awk '$1 == "terraform" {print $2}' .tool-versions)" >> "$GITHUB_OUTPUT"
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ steps.versions.outputs.terraform }}
+          terraform_wrapper: false
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: v0.66.0
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff infra/terraform
+      - name: terraform validate and tflint
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          mapfile -t dirs < <(find infra/terraform -name '*.tf' -not -path '*/.terraform/*' -printf '%h\n' | sort -u)
+          if [ ${#dirs[@]} -eq 0 ]; then
+            echo "No Terraform configurations found, nothing to validate"
+            exit 0
+          fi
+          tflint --init --config "$GITHUB_WORKSPACE/.tflint.hcl"
+          for dir in "${dirs[@]}"; do
+            echo "::group::$dir"
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+            tflint --chdir="$dir" --config "$GITHUB_WORKSPACE/.tflint.hcl"
+            echo "::endgroup::"
+          done
+
+  ci-passed:
+    if: always()
+    needs:
+      - changes
+      - format
+      - frontend
+      - backend
+      - architecture
+      - codeql
+      - trivy-config
+      - trivy-image
+      - compose
+      - helm
+      - terraform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check job results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Job results: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "::error::At least one CI job did not succeed"
+              exit 1
+            fi
+          done

@@ -1,7 +1,7 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
-/** Configuración base (flat config) para todo paquete TypeScript del monorepo. */
+/** Base flat config for every TypeScript package in the monorepo. */
 export default tseslint.config(
   { ignores: ["dist/**", "out/**", "build/**", ".expo/**", "coverage/**"] },
   js.configs.recommended,

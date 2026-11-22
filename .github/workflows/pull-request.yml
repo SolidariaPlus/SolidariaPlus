@@ -1,0 +1,58 @@
+name: pull-request
+
+on:
+  pull_request:
+    branches: [dev, qa, main]
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pull-request-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conventional Commits title with Jira key
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ "$AUTHOR" = "dependabot[bot]" ] || [[ "$HEAD_REF" == release-please--* ]]; then
+            echo "Automated pull request, title check skipped"
+            exit 0
+          fi
+          pattern='^(feat|fix|perf|refactor|test|docs|build|ci|chore)(\([a-z0-9-]+\))?!?: KAN-[0-9]+ .+$'
+          if [[ ! "$TITLE" =~ $pattern ]]; then
+            echo "::error::Pull request title must match '<type>(<scope>): KAN-<number> <subject>', e.g. 'feat(credit): KAN-123 add loan simulator'. Got: '$TITLE'"
+            exit 1
+          fi
+          echo "Title OK: $TITLE"
+
+  branch-name:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Jira branch naming
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          if [ "$AUTHOR" = "dependabot[bot]" ] || [[ "$HEAD_REF" == dependabot/* ]] || [[ "$HEAD_REF" == release-please--* ]]; then
+            echo "Automated branch, name check skipped"
+            exit 0
+          fi
+          if { [ "$HEAD_REF" = "dev" ] && [ "$BASE_REF" = "qa" ]; } || { [ "$HEAD_REF" = "qa" ] && [ "$BASE_REF" = "main" ]; }; then
+            echo "Promotion pull request $HEAD_REF -> $BASE_REF"
+            exit 0
+          fi
+          pattern='^feature/kan-[0-9]+-[a-z0-9-]{1,40}$'
+          if [[ ! "$HEAD_REF" =~ $pattern ]]; then
+            echo "::error::Branch '$HEAD_REF' must match $pattern (the name Jira generates, e.g. feature/kan-123-loan-simulator)"
+            exit 1
+          fi
+          echo "Branch OK: $HEAD_REF"

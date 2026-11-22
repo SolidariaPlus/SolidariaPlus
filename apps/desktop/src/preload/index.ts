@@ -1,6 +1,6 @@
 import { contextBridge } from "electron";
 
-// API mínima expuesta al renderer; ampliar con ipcRenderer según se necesite.
+// Minimal API exposed to the renderer; extend with ipcRenderer as needed.
 contextBridge.exposeInMainWorld("solidaria", {
   platform: process.platform,
 });

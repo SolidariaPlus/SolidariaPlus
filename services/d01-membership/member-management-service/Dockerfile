@@ -1,5 +1,5 @@
 # MS-01 · member-management-service · Java 21 / Spring Boot
-# Build context: raíz del repositorio
+# Build context: repository root
 #   docker build -f services/d01-membership/member-management-service/Dockerfile -t solidariaplus/member-management-service .
 
 FROM eclipse-temurin:21-jdk AS builder

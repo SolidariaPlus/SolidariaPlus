@@ -1,7 +1,7 @@
 # immutable-audit-ledger-service (MS-15)
 
 - Bounded context: `d06-aml-audit`
-- Stack: Java 21 · Spring Boot 3
+- Stack: Java 21 · Spring Boot 4
 - Paquete base: `com.solidariaplus.amlaudit.immutableauditledger`
 - Puerto local: `8095`
 

@@ -1,7 +1,7 @@
 # portfolio-recovery-service (MS-07)
 
 - Bounded context: `d03-credit`
-- Stack: Java 21 · Spring Boot 3
+- Stack: Java 21 · Spring Boot 4
 - Paquete base: `com.solidariaplus.credit.portfoliorecovery`
 - Puerto local: `8087`
 

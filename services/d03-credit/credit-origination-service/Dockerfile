@@ -1,5 +1,5 @@
 # MS-05 · credit-origination-service · Java 21 / Spring Boot
-# Build context: raíz del repositorio
+# Build context: repository root
 #   docker build -f services/d03-credit/credit-origination-service/Dockerfile -t solidariaplus/credit-origination-service .
 
 FROM eclipse-temurin:21-jdk AS builder

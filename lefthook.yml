@@ -14,5 +14,5 @@ pre-commit:
 
 commit-msg:
   jobs:
-    - name: commitlint (Conventional Commits + clave Jira)
+    - name: commitlint (Conventional Commits + Jira key)
       run: pnpm exec commitlint --edit {1}

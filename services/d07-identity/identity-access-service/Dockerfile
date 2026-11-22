@@ -1,5 +1,5 @@
 # MS-17 · identity-access-service · Java 21 / Spring Boot
-# Build context: raíz del repositorio
+# Build context: repository root
 #   docker build -f services/d07-identity/identity-access-service/Dockerfile -t solidariaplus/identity-access-service .
 
 FROM eclipse-temurin:21-jdk AS builder

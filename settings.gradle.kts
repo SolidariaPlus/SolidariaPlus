@@ -9,7 +9,7 @@ pluginManagement {
 }
 
 plugins {
-    // Descarga automáticamente el JDK 21 si no está instalado localmente
+    // Downloads JDK 21 automatically when it is not installed locally
     id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
 }
 
@@ -20,8 +20,8 @@ dependencyResolutionManagement {
     }
 }
 
-// Auto-descubrimiento: todo directorio services/<dominio>/<servicio> o libs/<lib>
-// que tenga build.gradle.kts se incluye como proyecto ":<nombre-carpeta>".
+// Auto-discovery: every services/<domain>/<service> or libs/<lib> directory
+// containing a build.gradle.kts is included as project ":<directory-name>".
 fun includeProjectsUnder(base: File, depth: Int) {
     val candidates = when (depth) {
         1 -> base.listFiles().orEmpty().filter { it.isDirectory }

@@ -1,7 +1,7 @@
 # general-ledger-service (MS-11)
 
 - Bounded context: `d05-accounting`
-- Stack: Java 21 · Spring Boot 3
+- Stack: Java 21 · Spring Boot 4
 - Paquete base: `com.solidariaplus.accounting.generalledger`
 - Puerto local: `8091`
 

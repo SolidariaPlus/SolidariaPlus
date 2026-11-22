@@ -1,18 +1,19 @@
 <!--
-El TITULO del PR debe contener la clave Jira (p.ej. "SP-123 feat(credit): ...").
-Con squash merge, el titulo se convierte en el commit de main y GitHub for Jira lo usa
-para asociar despliegues (AR-02 / AR-03).
+The PR title must follow Conventional Commits with the Jira key at the start of the subject,
+e.g. "feat(credit): KAN-123 add loan simulator". With squash merge the title becomes the commit
+on the target branch, and GitHub for Jira uses it to link deployments (AR-02 / AR-03).
+The branch must be the one Jira creates: feature/kan-123-<summary>.
 -->
 
 ## Jira
 
-SP-XXX
+KAN-XXX
 
 ## Description
 
-<!-- Que cambia y por que -->
+<!-- What changes and why -->
 
-## Exchange rate on GitHub
+## Type of change
 
 - [ ] feat
 - [ ] fix

@@ -44,6 +44,7 @@ dist/
 build/
 out/
 .next/
+coverage/
 
 # Environment variables
 .env
@@ -64,7 +65,7 @@ android/app/build/
 *.keystore
 release/
 
-# AWS / secretos (repositorio publico)
+# AWS / secrets (public repository)
 .aws/
 *.pem
 *.key
@@ -74,7 +75,7 @@ credentials
 .localstack/
 volume/
 
-# OS / herramientas
+# OS / tools
 .DS_Store
 Thumbs.db
 .agents/

@@ -1,5 +1,5 @@
 # MS-14 · ml-fraud-aml-service · Java 21 / Spring Boot
-# Build context: raíz del repositorio
+# Build context: repository root
 #   docker build -f services/d06-aml-audit/ml-fraud-aml-service/Dockerfile -t solidariaplus/ml-fraud-aml-service .
 
 FROM eclipse-temurin:21-jdk AS builder

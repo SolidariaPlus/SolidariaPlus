@@ -1,7 +1,7 @@
 # teller-transactions-service (MS-08)
 
 - Bounded context: `d04-teller-treasury`
-- Stack: Java 21 · Spring Boot 3
+- Stack: Java 21 · Spring Boot 4
 - Paquete base: `com.solidariaplus.tellertreasury.tellertransactions`
 - Puerto local: `8088`
 
