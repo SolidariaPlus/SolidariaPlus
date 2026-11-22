@@ -1,0 +1,11 @@
+{
+  "name": "@solidariaplus/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "echo \"build: @solidariaplus/mobile\"",
+    "dev": "echo \"dev: @solidariaplus/mobile\"",
+    "lint": "echo \"lint: @solidariaplus/mobile\"",
+    "clean": "echo \"clean: @solidariaplus/mobile\""
+  }
+}
