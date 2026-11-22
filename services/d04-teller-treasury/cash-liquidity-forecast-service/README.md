@@ -1,7 +1,7 @@
 # cash-liquidity-forecast-service (MS-10)
 
 - Bounded context: `d04-teller-treasury`
-- Stack: Java 21 · Spring Boot 3
+- Stack: Java 21 · Spring Boot 4
 - Paquete base: `com.solidariaplus.tellertreasury.cashliquidityforecast`
 - Puerto local: `8090`
 

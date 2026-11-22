@@ -10,7 +10,7 @@ Solidaria is a project focused on the management of savings and credit cooperati
 | `apps/mobile`                      | Mobile client — Expo (React Native)                                       | pnpm + Turborepo        |
 | `apps/desktop`                     | Desktop client — Electron + electron-vite                                 | pnpm + Turborepo        |
 | `packages/*`                       | Shared TS packages: `tsconfig`, `eslint-config`, `ui`                     | pnpm + Turborepo        |
-| `services/dNN-<context>/<service>` | 17 Java 21 / Spring Boot 3 microservices (MS-01 … MS-17)                  | Gradle                  |
+| `services/dNN-<context>/<service>` | 17 Java 21 / Spring Boot 4 microservices (MS-01 … MS-17)                  | Gradle                  |
 | `libs/*`                           | Shared Java libraries (auto-included when they have a `build.gradle.kts`) | Gradle                  |
 | `build-logic/`                     | Gradle convention plugins                                                 | Gradle (included build) |
 | `contracts/`                       | OpenAPI / AsyncAPI / GraphQL / Proto contracts                            | —                       |
@@ -33,8 +33,8 @@ Versions are pinned in [`.tool-versions`](./.tool-versions) (compatible with [mi
 | kubectl        | 1.37.2        | `.tool-versions`                                                 |
 | AWS CLI        | 2.42.1        | `.tool-versions`                                                 |
 
-Main backend libraries (`gradle/libs.versions.toml`): Spring Boot 3.5, Spring Cloud AWS 3.4, Resilience4j 2.4,
-Micrometer and Flyway (Spring Boot BOM), JUnit 5, Testcontainers 1.21, ArchUnit 1.5.
+Main backend libraries (`gradle/libs.versions.toml`): Spring Boot 4.2, Spring Cloud AWS 4.2, Resilience4j 2.4,
+Micrometer and Flyway (Spring Boot BOM), JUnit 6, Testcontainers 2.0, ArchUnit 1.5.
 
 ## Quick start
 
@@ -63,7 +63,7 @@ pnpm turbo run lint test             # frontend: ESLint + Vitest/Jest
 
 ## Backend build conventions (`build-logic/`)
 
-- `solidaria.java-conventions` — Java toolchain 21, JUnit 5, JaCoCo (XML + HTML), Spotless
+- `solidaria.java-conventions` — Java toolchain 21, JUnit 6, JaCoCo (XML + HTML), Spotless
   (Palantir Java Format, ktlint for `*.gradle.kts`) and Checkstyle (`config/checkstyle/checkstyle.xml`).
   `spotlessCheck` and `checkstyle*` run as part of `check`/`build`.
 - `solidaria.spring-boot-service` — Spring Boot web/validation, Actuator + Micrometer (Prometheus, OTel tracing),

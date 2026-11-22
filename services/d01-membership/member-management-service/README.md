@@ -1,7 +1,7 @@
 # member-management-service (MS-01)
 
 - Bounded context: `d01-membership`
-- Stack: Java 21 · Spring Boot 3
+- Stack: Java 21 · Spring Boot 4
 - Paquete base: `com.solidariaplus.membership.membermanagement`
 - Puerto local: `8081`
 

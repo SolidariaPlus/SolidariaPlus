@@ -1,7 +1,7 @@
 # identity-access-service (MS-17)
 
 - Bounded context: `d07-identity`
-- Stack: Java 21 · Spring Boot 3
+- Stack: Java 21 · Spring Boot 4
 - Paquete base: `com.solidariaplus.identity.identityaccess`
 - Puerto local: `8097`
 

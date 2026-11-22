@@ -1,7 +1,7 @@
 # smart-kyc-onboarding-service (MS-02)
 
 - Bounded context: `d01-membership`
-- Stack: Java 21 · Spring Boot 3
+- Stack: Java 21 · Spring Boot 4
 - Paquete base: `com.solidariaplus.membership.smartkyconboarding`
 - Puerto local: `8082`
 

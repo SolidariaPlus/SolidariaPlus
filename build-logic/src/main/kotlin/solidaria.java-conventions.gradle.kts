@@ -1,5 +1,5 @@
 // Shared conventions for every Java project in the monorepo:
-// Java 21 toolchain, JUnit 5, JaCoCo, ArchUnit architecture tests, Spotless (Palantir Java Format) and Checkstyle.
+// Java 21 toolchain, JUnit 6, JaCoCo, ArchUnit architecture tests, Spotless (Palantir Java Format) and Checkstyle.
 import org.gradle.accessors.dm.LibrariesForLibs
 
 plugins {

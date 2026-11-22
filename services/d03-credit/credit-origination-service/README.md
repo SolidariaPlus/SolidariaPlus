@@ -1,7 +1,7 @@
 # credit-origination-service (MS-05)
 
 - Bounded context: `d03-credit`
-- Stack: Java 21 · Spring Boot 3
+- Stack: Java 21 · Spring Boot 4
 - Paquete base: `com.solidariaplus.credit.creditorigination`
 - Puerto local: `8085`
 
