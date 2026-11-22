@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: ml-fraud-aml-service
+
+server:
+  port: ${SERVER_PORT:8094}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true

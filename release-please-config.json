@@ -1,0 +1,48 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "separate-pull-requests": false,
+  "include-component-in-tag": true,
+  "packages": {
+    "services/d01-membership/member-management-service": {
+      "component": "member-management-service"
+    },
+    "services/d01-membership/smart-kyc-onboarding-service": {
+      "component": "smart-kyc-onboarding-service"
+    },
+    "services/d02-savings/core-savings-service": { "component": "core-savings-service" },
+    "services/d02-savings/interest-and-contributions-service": {
+      "component": "interest-and-contributions-service"
+    },
+    "services/d03-credit/credit-origination-service": { "component": "credit-origination-service" },
+    "services/d03-credit/ml-credit-scoring-service": { "component": "ml-credit-scoring-service" },
+    "services/d03-credit/portfolio-recovery-service": { "component": "portfolio-recovery-service" },
+    "services/d04-teller-treasury/teller-transactions-service": {
+      "component": "teller-transactions-service"
+    },
+    "services/d04-teller-treasury/vault-reconciliation-service": {
+      "component": "vault-reconciliation-service"
+    },
+    "services/d04-teller-treasury/cash-liquidity-forecast-service": {
+      "component": "cash-liquidity-forecast-service"
+    },
+    "services/d05-accounting/general-ledger-service": { "component": "general-ledger-service" },
+    "services/d05-accounting/smart-accounting-rules-service": {
+      "component": "smart-accounting-rules-service"
+    },
+    "services/d05-accounting/financial-reporting-service": {
+      "component": "financial-reporting-service"
+    },
+    "services/d06-aml-audit/ml-fraud-aml-service": { "component": "ml-fraud-aml-service" },
+    "services/d06-aml-audit/immutable-audit-ledger-service": {
+      "component": "immutable-audit-ledger-service"
+    },
+    "services/d06-aml-audit/regulatory-supervision-service": {
+      "component": "regulatory-supervision-service"
+    },
+    "services/d07-identity/identity-access-service": { "component": "identity-access-service" },
+    "apps/web": { "component": "web", "release-type": "node" },
+    "apps/mobile": { "component": "mobile", "release-type": "node" },
+    "apps/desktop": { "component": "desktop", "release-type": "node" }
+  }
+}

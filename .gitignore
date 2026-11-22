@@ -1,5 +1,6 @@
 # Compiled class file and Package Files
 *.class
+# Package Files #
 *.jar
 *.war
 *.nar

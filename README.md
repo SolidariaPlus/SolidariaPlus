@@ -2,88 +2,88 @@
 
 Solidaria is a project focused on the management of savings and credit cooperatives, assisting with tasks such as recording savings, granting credit, managing members, handling financial operations, and predicting fraud.
 
-## Overview
+## Monorepo layout
 
-SolidariaPlus is a polyglot monorepo orchestrated by Turborepo (`turbo.json`)
-over pnpm workspaces (`pnpm-workspace.yaml`). Gradle (`settings.gradle.kts`), 
-workspaces register the native services. The repository is currently a **scaffold**: every service, client,
-contract, Terraform, and test directory contains only manifests, Dockerfiles,
-or `.gitkeep` placeholders. The only source file with logic is
-`commitlint.config.js`.
+| Path                               | Contents                                                                  | Build tool              |
+| ---------------------------------- | ------------------------------------------------------------------------- | ----------------------- |
+| `apps/web`                         | Web client — React + Vite                                                 | pnpm + Turborepo        |
+| `apps/mobile`                      | Mobile client — Expo (React Native)                                       | pnpm + Turborepo        |
+| `apps/desktop`                     | Desktop client — Electron + electron-vite                                 | pnpm + Turborepo        |
+| `packages/*`                       | Shared TS packages: `tsconfig`, `eslint-config`, `ui`                     | pnpm + Turborepo        |
+| `services/dNN-<context>/<service>` | 17 Java 21 / Spring Boot 3 microservices (MS-01 … MS-17)                  | Gradle                  |
+| `libs/*`                           | Shared Java libraries (auto-included when they have a `build.gradle.kts`) | Gradle                  |
+| `build-logic/`                     | Gradle convention plugins                                                 | Gradle (included build) |
+| `contracts/`                       | OpenAPI / AsyncAPI / GraphQL / Proto contracts                            | —                       |
+| `infra/`, `deploy/`                | Terraform, Helm, n8n                                                      | —                       |
+| `tests/`                           | e2e, functional, load and oracle tests                                    | —                       |
 
-## Interface
+## Toolchain
 
-### Root source
+Versions are pinned in [`.tool-versions`](./.tool-versions) (compatible with [mise](https://mise.jdx.dev) and [asdf](https://asdf-vm.com)).
 
-- `commitlint.config.js` (`module.exports`):
-  - `extends: ["@commitlint/config-conventional"]`
-  - Inline plugin rule `jira-key({ header, body })`. It returns `true` when the
-    header or body matches `/\b[A-Z][A-Z0-9]+-\d+\b/`.
-  - `rules`: `"jira-key": [2, "always"]`, `"header-max-length": [2, "always", 100]`.
+| Tool           | Version       | Pinned in                                                        |
+| -------------- | ------------- | ---------------------------------------------------------------- |
+| Java (Temurin) | 21.0.13       | `.tool-versions`, Gradle toolchain (`gradle/libs.versions.toml`) |
+| Gradle         | 9.6.0         | `gradle/wrapper/gradle-wrapper.properties`                       |
+| Node.js        | 24.22.3 (LTS) | `.tool-versions`, `package.json#engines`                         |
+| pnpm           | 11.20.0       | `.tool-versions`, `package.json#packageManager` (Corepack)       |
+| Docker         | 29.x          | manual install (Docker Desktop / Engine)                         |
+| Terraform      | 1.17.2        | `.tool-versions`                                                 |
+| Helm           | 4.3.2         | `.tool-versions`                                                 |
+| kubectl        | 1.37.2        | `.tool-versions`                                                 |
+| AWS CLI        | 2.42.1        | `.tool-versions`                                                 |
 
-### Root scripts (`package.json`)
+Main backend libraries (`gradle/libs.versions.toml`): Spring Boot 3.5, Spring Cloud AWS 3.4, Resilience4j 2.4,
+Micrometer and Flyway (Spring Boot BOM), JUnit 5, Testcontainers 1.21, ArchUnit 1.5.
 
-| Script | Command |
-| --- | --- |
-| `build` | `turbo run build` |
-| `dev` | `turbo run dev` |
-| `lint` | `turbo run lint` |
-| `test` | `turbo run test` |
-| `clean` | `turbo run clean` |
-| `prepare` | `lefthook install` |
+## Quick start
 
+```bash
+mise install                         # or: asdf install
+corepack enable
+pnpm install --frozen-lockfile       # also installs the lefthook Git hooks
 
-### Subdirectories
+./gradlew build                      # backend: compile, Spotless, Checkstyle, tests, JaCoCo
+pnpm turbo run lint test             # frontend: ESLint + Vitest/Jest
+```
 
-- `scripts`: [./scripts/README.md](./scripts/README.md). Developer helpers;
-  holds one empty placeholder script.
-- The following directories hold no source code, so the bootstrap pruned them
-  and they have no contract here:
-  - `services/`: 17 microservice scaffolds (`MS-01` to `MS-17`) in seven
-    bounded contexts (`d01-membership` to `d07-auth`). Each has a
-    `Dockerfile` (base image only), a thin `package.json` whose
-    `build`/`dev`/`lint`/`clean` scripts only `echo`, a stub `README.md`, a
-    `CHANGELOG.md`, and an empty `src`/`cmd`/`internal`.
-  - `apps/`: `web`, `mobile`, and `desktop`. Each holds `package.json` with
-    `echo` scripts only.
-  - `contracts/`: `openapi/` and `asyncapi/` (`.gitkeep` only).
-  - `infra/`: `accounts.yml` (empty), `local/docker-compose.yml` (only
-    `services:`), and `terraform/{bootstrap,envs/qa,envs/prod,modules}`
-    (`.gitkeep` only).
-  - `packages/` and `tests/{api,e2e,oracles}`: `.gitkeep` only.
-  - `.github/workflows`: `ci.yml`, `deploy-qa.yml`, `infra.yml`,
-    `promote-prod.yml`, and `release.yml` (CI configuration, not source).
+> If Java 21 is not installed, Gradle downloads it automatically (foojay toolchain resolver).
 
-## Invariants
+### Common commands
 
-- Every commit message must contain a Jira-style key matching
-  `[A-Z][A-Z0-9]+-\d+` and have a header of at most 100 characters
-  (`commitlint.config.js`, enforced by `lefthook.yml` `commit-msg` →
-  `pnpm exec commitlint --edit {1}`).
-- Every pushed branch except `main` must contain a key matching
-  `[A-Z][A-Z0-9]+-[0-9]+` (`lefthook.yml` `pre-push.branch-jira-key`).
-- Pull request titles must contain a key matching `[A-Z][A-Z0-9]+-[0-9]+`
-  (`.github/workflows/ci.yml` job `pr-title`).
-- The Turbo `test` task depends on `build` (`turbo.json`).
-- Text files use LF line endings, except `*.bat`, `*.cmd`, and `*.ps1`, which
-  use CRLF (`.gitattributes`).
-- Java toolchain is 21 (`gradle/libs.versions.toml`, each `build.gradle.kts`).
+| Goal                         | Command                                        |
+| ---------------------------- | ---------------------------------------------- |
+| Run one service              | `./gradlew :member-management-service:bootRun` |
+| Format Java / Gradle         | `./gradlew spotlessApply`                      |
+| Format TS / JSON / YAML / MD | `pnpm format`                                  |
+| Web dev server               | `pnpm --filter @solidariaplus/web dev`         |
+| Desktop dev                  | `pnpm --filter @solidariaplus/desktop dev`     |
+| Mobile (Metro)               | `pnpm --filter @solidariaplus/mobile dev`      |
+| Frontend full pipeline       | `pnpm turbo run lint typecheck build test`     |
 
-## Side Effects
+## Backend build conventions (`build-logic/`)
 
-- `pnpm install` triggers `prepare` → `lefthook install`, which writes Git hooks
-  into `.git/hooks`.
-- `.github/workflows/release.yml` (push to `main`) runs
-  `googleapis/release-please-action@v4` with `contents: write` and
-  `pull-requests: write`. It opens or updates release PRs and creates tags.
-- `.github/workflows/ci.yml` runs `pnpm install --frozen-lockfile` and
-  `pnpm turbo run lint build test` on GitHub-hosted `ubuntu-latest` runners.
-- `deploy-qa.yml`, `promote-prod.yml`, and `infra.yml` only `echo` TODO
-  messages. They do not touch AWS yet, although they request
-  `id-token: write`.
+- `solidaria.java-conventions` — Java toolchain 21, JUnit 5, JaCoCo (XML + HTML), Spotless
+  (Palantir Java Format, ktlint for `*.gradle.kts`) and Checkstyle (`config/checkstyle/checkstyle.xml`).
+  `spotlessCheck` and `checkstyle*` run as part of `check`/`build`.
+- `solidaria.spring-boot-service` — Spring Boot web/validation, Actuator + Micrometer (Prometheus, OTel tracing),
+  BOMs for Spring Cloud AWS, Resilience4j and Testcontainers; produces `build/libs/app.jar`.
+- `solidaria.java-library` — shared libraries under `libs/`.
 
-## Verification
+Services opt into extra modules without versions, e.g.
+`implementation(libs.spring.cloud.aws.starter.sqs)`, `implementation(libs.bundles.resilience)`,
+`implementation(libs.flyway.core)`.
 
-- Run: `pnpm test` (alias of `turbo run test`).
-- No workspace package defines a `test` script yet, so this command currently
-  runs no tests. CI runs `pnpm turbo run lint build test`.
+## Git conventions
+
+- **Commits**: Conventional Commits with a Jira key, e.g. `feat(credit): add scoring endpoint KAN-42`
+  (`commitlint.config.js`, run by the `commit-msg` hook).
+- **Pre-commit** (`lefthook.yml`): Prettier on staged TS/JS/JSON/YAML/MD files and `spotlessApply` on staged
+  Java/Kotlin DSL files; fixed files are re-staged automatically.
+- **PR titles** must contain the Jira key (`.github/workflows/ci.yml` → `pr-title`).
+- **Releases**: release-please per component (`release-please-config.json`, `.release-please-manifest.json`).
+
+## CI
+
+`.github/workflows/ci.yml` runs two jobs: `frontend` (`pnpm install --frozen-lockfile` +
+`turbo run lint typecheck build test`) and `backend` (`./gradlew build` on Temurin 21).

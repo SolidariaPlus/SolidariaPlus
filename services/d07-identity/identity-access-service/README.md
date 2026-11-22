@@ -1,10 +1,16 @@
-# member-management-service (MS-01)
+# identity-access-service (MS-17)
 
-- Bounded context: `d01-membership`
-- Stack: Java 21
+- Bounded context: `d07-identity`
+- Stack: Java 21 · Spring Boot 3
+- Paquete base: `com.solidariaplus.identity.identityaccess`
+- Puerto local: `8097`
 
 ## Desarrollo local
 
 ```bash
-pnpm turbo run build --filter=@solidariaplus/member-management-service
+./gradlew :identity-access-service:bootRun   # levantar el servicio
+./gradlew :identity-access-service:test      # tests + reporte JaCoCo
+./gradlew :identity-access-service:bootJar   # build/libs/app.jar
 ```
+
+Health check: <http://localhost:8097/actuator/health>

@@ -1,0 +1,10 @@
+# Workspace pnpm: SOLO frontend (apps) y paquetes TS compartidos.
+# El backend Java (services/*, libs/*) lo gestiona Gradle (settings.gradle.kts).
+packages:
+  - "apps/*"
+  - "packages/*"
+allowBuilds:
+  lefthook: true
+  electron: true
+  esbuild: true
+  "@parcel/watcher": false

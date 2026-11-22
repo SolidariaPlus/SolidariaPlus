@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: immutable-audit-ledger-service
+
+server:
+  port: ${SERVER_PORT:8095}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true

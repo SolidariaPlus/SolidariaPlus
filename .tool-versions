@@ -1,0 +1,8 @@
+java temurin-21.0.13+9.0.LTS
+nodejs 24.22.3
+pnpm 11.20.0
+terraform 1.17.2
+helm 4.3.2
+kubectl 1.37.2
+awscli 2.42.1
+# docker 29.x (Docker Desktop / Engine; no gestionado por asdf/mise)

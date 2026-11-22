@@ -1,0 +1,18 @@
+# https://lefthook.dev/configuration/
+pre-commit:
+  parallel: true
+  jobs:
+    - name: prettier (frontend, json, yaml, markdown)
+      glob: "*.{ts,tsx,js,mjs,cjs,json,md,yml,yaml}"
+      run: pnpm exec prettier --write --ignore-unknown {staged_files}
+      stage_fixed: true
+
+    - name: spotless (Java + Gradle Kotlin DSL)
+      glob: "*.{java,kts}"
+      run: ./gradlew spotlessApply --quiet
+      stage_fixed: true
+
+commit-msg:
+  jobs:
+    - name: commitlint (Conventional Commits + clave Jira)
+      run: pnpm exec commitlint --edit {1}

@@ -1,0 +1,16 @@
+spring:
+  application:
+    name: general-ledger-service
+
+server:
+  port: ${SERVER_PORT:8091}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
