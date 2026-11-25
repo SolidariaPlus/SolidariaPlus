@@ -1,0 +1,254 @@
+# TEMPORARY Microcks mock of MS-01 member-management-service (KAN-37).
+# Microcks publishes the examples of `send` operations only, so this file describes MS-01 as the
+# producer of the two events that MS-17 consumes. The data mirrors KAN-15 D-01 §1.1 and the
+# consumed messages of contracts/asyncapi/identity-access.asyncapi.yaml.
+# Delete this file, and its entry in artifacts.yaml, when contracts/asyncapi/member-management.asyncapi.yaml
+# exists and MS-01 runs in QA.
+asyncapi: 3.0.0
+
+info:
+  title: Solidaria+ member-management-service (MS-01) mock for MS-17
+  version: 1.0.0
+  description: |
+    Stand-in producer of MemberAdmitted and MembershipEnded on `member-management.events`, so
+    MS-17 can be built and tested before MS-01 is in QA. Only the two events consumed by MS-17.
+  license:
+    name: Proprietary
+
+defaultContentType: application/cloudevents+json
+
+servers:
+  local:
+    host: localhost:9094
+    protocol: kafka
+    description: Kafka of compose.yaml (EXTERNAL listener).
+
+channels:
+  memberManagementEvents:
+    address: member-management.events
+    title: member-management.events
+    messages:
+      MemberAdmitted:
+        $ref: "#/components/messages/MemberAdmitted"
+      MembershipEnded:
+        $ref: "#/components/messages/MembershipEnded"
+
+operations:
+  publishMemberAdmitted:
+    action: send
+    channel:
+      $ref: "#/channels/memberManagementEvents"
+    summary: The Board admitted a candidate.
+    x-microcks-operation:
+      frequency: 30
+    messages:
+      - $ref: "#/channels/memberManagementEvents/messages/MemberAdmitted"
+
+  publishMembershipEnded:
+    action: send
+    channel:
+      $ref: "#/channels/memberManagementEvents"
+    summary: A member was excluded or withdrew.
+    x-microcks-operation:
+      frequency: 30
+    messages:
+      - $ref: "#/channels/memberManagementEvents/messages/MembershipEnded"
+
+components:
+  messages:
+    MemberAdmitted:
+      name: MemberAdmitted
+      title: MemberAdmitted v1
+      contentType: application/cloudevents+json
+      payload:
+        $ref: "#/components/schemas/MemberAdmittedEvent"
+      bindings:
+        kafka:
+          key:
+            type: string
+            format: uuid
+          bindingVersion: 0.5.0
+      examples:
+        - name: memberAdmitted
+          summary: Member 000123 is admitted
+          headers:
+            content-type: application/cloudevents+json
+          payload:
+            specversion: "1.0"
+            id: 0193a1f0-3c01-7d2e-8f3a-4b5c6d7e8f01
+            source: /services/member-management-service
+            type: ec.solidariaplus.membership.MemberAdmitted.v1
+            subject: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a90
+            time: "2026-11-24T21:00:00Z"
+            datacontenttype: application/json
+            dataschema: urn:solidariaplus:schema:membership:MemberAdmitted:v1
+            correlationid: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a76
+            data:
+              memberId: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a90
+              memberNumber: "000123"
+              certificateNumber: 123
+              admissionDate: "2026-11-24"
+              admittedAt: "2026-11-24T21:00:00Z"
+
+    MembershipEnded:
+      name: MembershipEnded
+      title: MembershipEnded v1
+      contentType: application/cloudevents+json
+      payload:
+        $ref: "#/components/schemas/MembershipEndedEvent"
+      bindings:
+        kafka:
+          key:
+            type: string
+            format: uuid
+          bindingVersion: 0.5.0
+      examples:
+        - name: memberExcluded
+          summary: The assembly excluded a member
+          headers:
+            content-type: application/cloudevents+json
+          payload:
+            specversion: "1.0"
+            id: 0193a1f0-3c01-7d2e-8f3a-4b5c6d7e8f02
+            source: /services/member-management-service
+            type: ec.solidariaplus.membership.MembershipEnded.v1
+            subject: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a92
+            time: "2026-11-25T16:00:00Z"
+            datacontenttype: application/json
+            dataschema: urn:solidariaplus:schema:membership:MembershipEnded:v1
+            correlationid: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a72
+            data:
+              memberId: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a92
+              endType: EXCLUDED
+              assemblyMinutes:
+                number: AG-2026-07
+                date: "2026-11-22"
+              endedAt: "2026-11-25T16:00:00Z"
+        - name: memberWithdrew
+          summary: A member withdrew voluntarily
+          headers:
+            content-type: application/cloudevents+json
+          payload:
+            specversion: "1.0"
+            id: 0193a1f0-3c01-7d2e-8f3a-4b5c6d7e8f03
+            source: /services/member-management-service
+            type: ec.solidariaplus.membership.MembershipEnded.v1
+            subject: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a93
+            time: "2026-11-25T17:30:00Z"
+            datacontenttype: application/json
+            dataschema: urn:solidariaplus:schema:membership:MembershipEnded:v1
+            correlationid: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a77
+            data:
+              memberId: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a93
+              endType: WITHDRAWN
+              endedAt: "2026-11-25T17:30:00Z"
+
+  schemas:
+    CloudEventEnvelope:
+      type: object
+      required:
+        [
+          specversion,
+          id,
+          source,
+          type,
+          subject,
+          time,
+          datacontenttype,
+          dataschema,
+          correlationid,
+          data,
+        ]
+      properties:
+        specversion:
+          type: string
+          const: "1.0"
+        id:
+          type: string
+          format: uuid
+        source:
+          type: string
+          const: /services/member-management-service
+        type:
+          type: string
+        subject:
+          type: string
+          format: uuid
+        time:
+          type: string
+          format: date-time
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+          format: uri
+        correlationid:
+          type: string
+          format: uuid
+        causationid:
+          type: string
+          format: uuid
+        traceparent:
+          type: string
+        data:
+          type: object
+
+    MemberAdmittedEvent:
+      allOf:
+        - $ref: "#/components/schemas/CloudEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: ec.solidariaplus.membership.MemberAdmitted.v1
+            dataschema:
+              const: urn:solidariaplus:schema:membership:MemberAdmitted:v1
+            data:
+              type: object
+              required: [memberId, memberNumber, certificateNumber, admissionDate, admittedAt]
+              properties:
+                memberId:
+                  type: string
+                  format: uuid
+                memberNumber:
+                  type: string
+                certificateNumber:
+                  type: integer
+                admissionDate:
+                  type: string
+                  format: date
+                admittedAt:
+                  type: string
+                  format: date-time
+
+    MembershipEndedEvent:
+      allOf:
+        - $ref: "#/components/schemas/CloudEventEnvelope"
+        - type: object
+          properties:
+            type:
+              const: ec.solidariaplus.membership.MembershipEnded.v1
+            dataschema:
+              const: urn:solidariaplus:schema:membership:MembershipEnded:v1
+            data:
+              type: object
+              required: [memberId, endType, endedAt]
+              properties:
+                memberId:
+                  type: string
+                  format: uuid
+                endType:
+                  type: string
+                  enum: [EXCLUDED, WITHDRAWN]
+                assemblyMinutes:
+                  type: object
+                  required: [number, date]
+                  properties:
+                    number:
+                      type: string
+                    date:
+                      type: string
+                      format: date
+                endedAt:
+                  type: string
+                  format: date-time

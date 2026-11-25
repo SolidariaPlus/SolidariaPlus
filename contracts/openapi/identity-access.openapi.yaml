@@ -1,0 +1,1721 @@
+openapi: 3.1.0
+
+info:
+  title: Solidaria+ identity-access-service (MS-17)
+  version: 1.0.0
+  summary: OAuth 2.1 and OpenID Connect authorization server of Solidaria+.
+  description: |
+    Authorization server of Solidaria+ (bounded context D-07 Identity and Access).
+
+    - Members sign in with their member number and password; staff sign in with their
+      directory account (Active Directory over LDAPS); directory groups map to roles (KAN-2 ADR-084).
+    - Clients use the authorization code grant with PKCE (S256, RFC 7636); access tokens are
+      ES256 JWTs with a 10-minute lifetime and audience `solidaria-api` (RNF-SEG-03).
+    - Services use the client credentials grant and authenticate with `client_secret_basic`
+      (KAN-2 ADR-124).
+    - Refresh tokens rotate on every use; presenting an older one revokes the session and
+      publishes SessionRevoked (KAN-2 ADR-083).
+
+    Errors: the OAuth endpoints answer RFC 6749 error responses; every other endpoint answers
+    RFC 9457 problem details whose `type` is `https://errors.solidariaplus.ec/<code>`, with the
+    codes of `contracts/errors/error-codes.yaml` (KAN-15 §4).
+  contact:
+    name: Solidaria+ team
+    url: https://solidariaplus.atlassian.net/wiki/spaces/SO/pages/21430274
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+
+servers:
+  - url: https://{apiHost}/auth
+    description: API Gateway of the environment (QA or PROD); the /auth stage has no JWT authorizer.
+    variables:
+      apiHost:
+        description: Custom domain of the API Gateway of the environment.
+        default: api.solidariaplus.ec
+  - url: http://localhost:8097
+    description: Local workstation (./gradlew :identity-access-service:bootRun); no /auth prefix.
+
+tags:
+  - name: Discovery
+    description: OpenID Connect discovery (RFC 8414) and the signing keys.
+  - name: OAuth
+    description: OAuth 2.1 endpoints; errors follow RFC 6749 §5.2.
+  - name: Pages
+    description: Server-rendered sign-in pages (text/html) used by the authorization code flow.
+  - name: Activation
+    description: One-time activation codes for member accounts (RF-17-04).
+  - name: Staff
+    description: Staff authenticator management (RF-17-13, KAN-2 ADR-126).
+  - name: Sessions
+    description: Sign-out of one or all sessions (RF-17-08).
+
+paths:
+  /.well-known/openid-configuration:
+    get:
+      tags: [Discovery]
+      operationId: getOpenIdConfiguration
+      summary: Get the authorization server metadata
+      description: OpenID Connect discovery document (RFC 8414). Public and cacheable.
+      security: []
+      responses:
+        "200":
+          description: Authorization server metadata.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CachePublic"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenIdProviderMetadata"
+              examples:
+                metadata:
+                  $ref: "#/components/examples/OpenIdProviderMetadata"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /jwks:
+    get:
+      tags: [Discovery]
+      operationId: getJsonWebKeySet
+      summary: Get the signing keys
+      description: |
+        Public keys (JWK Set, RFC 7517) that verify the access and ID tokens. During a key
+        rotation the set holds the current and the previous key; services pick the key by `kid`.
+      security: []
+      responses:
+        "200":
+          description: JSON Web Key Set.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CachePublic"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JsonWebKeySet"
+              examples:
+                keys:
+                  $ref: "#/components/examples/JsonWebKeySet"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /oauth2/authorize:
+    get:
+      tags: [OAuth]
+      operationId: authorize
+      summary: Start the authorization code flow with PKCE
+      description: |
+        Authorization endpoint (RFC 6749 §4.1, RFC 7636). Without a sign-in session the browser
+        is redirected to `/login`, then to `/mfa` when a second factor is required. When the
+        flow ends the browser is redirected to `redirect_uri` with `code` and `state`, or with
+        an RFC 6749 §4.1.2.1 error. When `client_id` or `redirect_uri` are invalid the server
+        never redirects and renders an error page.
+      security: []
+      parameters:
+        - name: response_type
+          in: query
+          required: true
+          schema:
+            type: string
+            const: code
+          example: code
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/ClientId"
+          example: solidaria-web
+        - name: redirect_uri
+          in: query
+          required: true
+          description: Must exactly match a redirect URI registered for the client.
+          schema:
+            type: string
+            format: uri
+          example: https://app.solidariaplus.ec/auth/callback
+        - name: scope
+          in: query
+          required: true
+          description: Space-separated scopes; `openid` is required.
+          schema:
+            type: string
+          example: openid offline_access
+        - name: state
+          in: query
+          required: true
+          description: Opaque value returned unchanged; protects the client against CSRF.
+          schema:
+            type: string
+            minLength: 16
+            maxLength: 512
+          example: 4f1d2c9a8b7e6f5a4d3c2b1a
+        - name: code_challenge
+          in: query
+          required: true
+          description: BASE64URL(SHA-256(code_verifier)) (RFC 7636 §4.2).
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]{43}$"
+          example: E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM
+        - name: code_challenge_method
+          in: query
+          required: true
+          schema:
+            type: string
+            const: S256
+          example: S256
+        - name: nonce
+          in: query
+          required: false
+          description: Bound into the ID token to prevent replay.
+          schema:
+            type: string
+            maxLength: 512
+          example: n-0S6_WzA2Mj
+        - name: prompt
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [none, login]
+          example: login
+      responses:
+        "302":
+          description: |
+            Redirect to `/login` (no session), to `/mfa` (second factor pending), or to
+            `redirect_uri` with `code` and `state`, or with `error`, `error_description` and `state`.
+          headers:
+            Location:
+              description: Next step of the flow.
+              schema:
+                type: string
+                format: uri-reference
+              examples:
+                toLogin:
+                  summary: No sign-in session yet
+                  value: /login
+                toClient:
+                  summary: Authorization code issued
+                  value: https://app.solidariaplus.ec/auth/callback?code=SplxlOBeZQQYbYS6WxSbIA&state=4f1d2c9a8b7e6f5a4d3c2b1a
+                accessDenied:
+                  summary: The user cancelled the sign-in
+                  value: https://app.solidariaplus.ec/auth/callback?error=access_denied&error_description=Sign-in%20cancelled&state=4f1d2c9a8b7e6f5a4d3c2b1a
+        "400":
+          description: Unknown client or redirect URI; rendered as a page, never redirected.
+          content:
+            text/html:
+              schema:
+                $ref: "#/components/schemas/HtmlPage"
+              examples:
+                invalidClient:
+                  summary: Unregistered redirect URI
+                  value: '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Solicitud no válida</title></head><body><main><h1>Solicitud no válida</h1><p>La aplicación que solicitó el acceso no está registrada.</p></main></body></html>'
+        "429":
+          $ref: "#/components/responses/RateLimitedPage"
+
+  /oauth2/token:
+    post:
+      tags: [OAuth]
+      operationId: issueToken
+      summary: Issue or renew tokens
+      description: |
+        Token endpoint (RFC 6749 §3.2) with three grants:
+
+        - `authorization_code`: public clients (web, mobile, desktop) send `client_id` and the
+          PKCE `code_verifier`; no client secret.
+        - `refresh_token`: returns a new access token and a **new** refresh token; the old one
+          becomes invalid. Presenting an already used refresh token revokes the whole session
+          (`invalid_grant`, SessionRevoked with reason REFRESH_TOKEN_REUSE).
+        - `client_credentials`: services authenticate with HTTP Basic (`client_secret_basic`,
+          KAN-2 ADR-124); no refresh token is issued.
+      security:
+        - {}
+        - clientSecretBasic: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/TokenRequest"
+            examples:
+              authorizationCode:
+                $ref: "#/components/examples/TokenRequestAuthorizationCode"
+              refreshToken:
+                $ref: "#/components/examples/TokenRequestRefreshToken"
+              clientCredentials:
+                $ref: "#/components/examples/TokenRequestClientCredentials"
+              reusedRefreshToken:
+                $ref: "#/components/examples/TokenRequestReusedRefreshToken"
+              wrongClientSecret:
+                $ref: "#/components/examples/TokenRequestClientCredentials"
+      responses:
+        "200":
+          description: Tokens issued.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheNoStore"
+            Pragma:
+              $ref: "#/components/headers/PragmaNoCache"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+              examples:
+                authorizationCode:
+                  $ref: "#/components/examples/TokenResponseUser"
+                refreshToken:
+                  $ref: "#/components/examples/TokenResponseUser"
+                clientCredentials:
+                  $ref: "#/components/examples/TokenResponseService"
+        "400":
+          description: RFC 6749 §5.2 error (invalid_request, invalid_grant, unsupported_grant_type, invalid_scope).
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheNoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+              examples:
+                reusedRefreshToken:
+                  summary: Reused refresh token; the session is revoked
+                  value:
+                    error: invalid_grant
+                    error_description: The refresh token is no longer valid.
+        "401":
+          description: Client authentication failed (`invalid_client`).
+          headers:
+            WWW-Authenticate:
+              description: Authentication scheme expected for the client.
+              schema:
+                type: string
+              example: Basic realm="solidaria"
+            Cache-Control:
+              $ref: "#/components/headers/CacheNoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+              examples:
+                wrongClientSecret:
+                  summary: Wrong client secret of a service
+                  value:
+                    error: invalid_client
+                    error_description: Client authentication failed.
+        "429":
+          $ref: "#/components/responses/RateLimitedOAuth"
+
+  /oauth2/revoke:
+    post:
+      tags: [OAuth]
+      operationId: revokeToken
+      summary: Revoke a refresh token (sign-out)
+      description: |
+        Token revocation (RFC 7009). Revoking a refresh token ends its session and publishes
+        SessionRevoked with reason SIGN_OUT. Unknown or already revoked tokens also answer 200.
+      security:
+        - {}
+        - clientSecretBasic: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/RevocationRequest"
+            examples:
+              signOut:
+                summary: A member app signs out
+                value:
+                  token: 8xLOxBtZp8.rotated.Fm2k1Qz9Yw
+                  token_type_hint: refresh_token
+                  client_id: solidaria-mobile
+      responses:
+        "200":
+          description: The token is revoked (or was not valid); empty body.
+        "400":
+          description: RFC 6749 §5.2 error.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OAuthError"
+              examples:
+                missingToken:
+                  summary: The token parameter is missing
+                  value:
+                    error: invalid_request
+                    error_description: The token parameter is required.
+        "429":
+          $ref: "#/components/responses/RateLimitedOAuth"
+
+  /login:
+    get:
+      tags: [Pages]
+      operationId: getLoginPage
+      summary: Render the sign-in page
+      description: |
+        Sign-in form for members (member number and password) and staff (directory account and
+        password). Reached through a redirect from `/oauth2/authorize`.
+      security: []
+      parameters:
+        - name: error
+          in: query
+          required: false
+          description: Present after a failed attempt so the page shows a generic message.
+          schema:
+            type: string
+            enum: [credentials, locked]
+          example: credentials
+      responses:
+        "200":
+          description: Sign-in page.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheNoStore"
+          content:
+            text/html:
+              schema:
+                $ref: "#/components/schemas/HtmlPage"
+              examples:
+                loginPage:
+                  summary: Empty sign-in form
+                  value: '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Iniciar sesión · Solidaria+</title></head><body><main><h1>Iniciar sesión</h1><form method="post" action="/auth/login"><label>Número de socio o cuenta institucional <input name="username" autocomplete="username" required></label><label>Contraseña <input name="password" type="password" autocomplete="current-password" required></label><input type="hidden" name="_csrf" value="token-csrf"><button type="submit">Ingresar</button></form></main></body></html>'
+        "429":
+          $ref: "#/components/responses/RateLimitedPage"
+    post:
+      tags: [Pages]
+      operationId: submitLogin
+      summary: Submit the sign-in form
+      description: |
+        Checks the password (members) or binds to the directory (staff). After 5 failed attempts
+        in 15 minutes the identifier is locked for 15 minutes (AUTH_ACCOUNT_LOCKED). Browsers get
+        the page back; a client that sends `Accept: application/problem+json` gets problem details.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/LoginForm"
+            examples:
+              memberSignIn:
+                summary: A member signs in with the member number
+                value:
+                  username: "000123"
+                  password: Ahorro-Seguro-2026
+                  _csrf: token-csrf
+              wrongPassword:
+                summary: Wrong password
+                value:
+                  username: "000123"
+                  password: clave-equivocada
+                  _csrf: token-csrf
+              lockedAccount:
+                summary: Sixth attempt within 15 minutes
+                value:
+                  username: "000123"
+                  password: clave-equivocada
+                  _csrf: token-csrf
+      responses:
+        "302":
+          description: Signed in; continues to `/mfa` or back to `/oauth2/authorize`.
+          headers:
+            Location:
+              description: Next step of the flow.
+              schema:
+                type: string
+                format: uri-reference
+              example: /mfa
+            Set-Cookie:
+              description: Sign-in session cookie (HttpOnly, Secure, SameSite=Lax).
+              schema:
+                type: string
+              example: SESSION=8b7e6f5a4d3c; Path=/auth; Secure; HttpOnly; SameSite=Lax
+        "401":
+          description: Wrong credentials (UNAUTHENTICATED); the message never says which part failed.
+          content:
+            text/html:
+              schema:
+                $ref: "#/components/schemas/HtmlPage"
+              examples:
+                wrongPassword:
+                  summary: Page with a generic error
+                  value: '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Iniciar sesión · Solidaria+</title></head><body><main><h1>Iniciar sesión</h1><p role="alert">El usuario o la contraseña no son correctos.</p></main></body></html>'
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                wrongPassword:
+                  summary: Wrong credentials
+                  value:
+                    type: https://errors.solidariaplus.ec/UNAUTHENTICATED
+                    title: Authentication failed
+                    status: 401
+                    code: UNAUTHENTICATED
+                    detail: The identifier or the password is not correct.
+                    instance: /auth/login
+                    correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a5b
+        "423":
+          description: The identifier is locked for 15 minutes (AUTH_ACCOUNT_LOCKED).
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/RetryAfter"
+          content:
+            text/html:
+              schema:
+                $ref: "#/components/schemas/HtmlPage"
+              examples:
+                lockedAccount:
+                  summary: Page that explains the lock
+                  value: '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Cuenta bloqueada · Solidaria+</title></head><body><main><h1>Cuenta bloqueada temporalmente</h1><p role="alert">Demasiados intentos fallidos. Vuelva a intentarlo en 15 minutos.</p></main></body></html>'
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                lockedAccount:
+                  summary: Account locked
+                  value:
+                    type: https://errors.solidariaplus.ec/AUTH_ACCOUNT_LOCKED
+                    title: Account locked
+                    status: 423
+                    code: AUTH_ACCOUNT_LOCKED
+                    detail: Too many failed attempts; try again in 15 minutes.
+                    instance: /auth/login
+                    correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a5c
+        "429":
+          $ref: "#/components/responses/RateLimitedPage"
+
+  /activate:
+    get:
+      tags: [Pages]
+      operationId: getActivationPage
+      summary: Render the account activation page
+      description: |
+        A member enters the member number, the one-time activation code issued by the teller
+        (8 characters, valid 72 hours) and a new password. Also used after a forgotten password.
+      security: []
+      responses:
+        "200":
+          description: Activation page.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheNoStore"
+          content:
+            text/html:
+              schema:
+                $ref: "#/components/schemas/HtmlPage"
+              examples:
+                activationPage:
+                  summary: Empty activation form
+                  value: '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Activar cuenta · Solidaria+</title></head><body><main><h1>Activar su cuenta</h1><form method="post" action="/auth/activate"><label>Número de socio <input name="memberNumber" required></label><label>Código de activación <input name="activationCode" autocomplete="one-time-code" required></label><label>Nueva contraseña <input name="newPassword" type="password" autocomplete="new-password" required></label><input type="hidden" name="_csrf" value="token-csrf"><button type="submit">Activar</button></form></main></body></html>'
+        "429":
+          $ref: "#/components/responses/RateLimitedPage"
+    post:
+      tags: [Pages]
+      operationId: submitActivation
+      summary: Submit the activation form
+      description: |
+        Consumes the activation code and sets the password. A wrong, used or expired code
+        answers AUTH_ACTIVATION_CODE_INVALID without saying which of the three it was.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/ActivationForm"
+            examples:
+              activateAccount:
+                summary: First activation of an admitted member
+                value:
+                  memberNumber: "000123"
+                  activationCode: K7Q4M2XP
+                  newPassword: Ahorro-Seguro-2026
+                  _csrf: token-csrf
+              invalidCode:
+                summary: Expired activation code
+                value:
+                  memberNumber: "000123"
+                  activationCode: ZZZZ9999
+                  newPassword: Ahorro-Seguro-2026
+                  _csrf: token-csrf
+      responses:
+        "302":
+          description: Account activated; continues to `/login` (or `/oauth2/authorize` when a flow is pending).
+          headers:
+            Location:
+              description: Next step of the flow.
+              schema:
+                type: string
+                format: uri-reference
+              example: /login
+        "400":
+          description: Wrong, used or expired activation code (AUTH_ACTIVATION_CODE_INVALID).
+          content:
+            text/html:
+              schema:
+                $ref: "#/components/schemas/HtmlPage"
+              examples:
+                invalidCode:
+                  summary: Page with the error
+                  value: '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Activar cuenta · Solidaria+</title></head><body><main><h1>Activar su cuenta</h1><p role="alert">El código de activación no es válido o ya expiró. Solicite uno nuevo en ventanilla.</p></main></body></html>'
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                invalidCode:
+                  summary: Invalid activation code
+                  value:
+                    type: https://errors.solidariaplus.ec/AUTH_ACTIVATION_CODE_INVALID
+                    title: Activation code invalid
+                    status: 400
+                    code: AUTH_ACTIVATION_CODE_INVALID
+                    detail: The activation code is not valid or has expired.
+                    instance: /auth/activate
+                    correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a5d
+        "422":
+          $ref: "#/components/responses/PasswordPolicy"
+        "429":
+          $ref: "#/components/responses/RateLimitedPage"
+
+  /mfa:
+    get:
+      tags: [Pages]
+      operationId: getMfaPage
+      summary: Render the second-factor page
+      description: |
+        TOTP step after the password. On the first sign-in, and within 24 hours of an
+        authenticator reset (ADR-126), the page shows the enrolment QR code instead.
+      security: []
+      responses:
+        "200":
+          description: Second-factor page.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheNoStore"
+          content:
+            text/html:
+              schema:
+                $ref: "#/components/schemas/HtmlPage"
+              examples:
+                mfaPage:
+                  summary: TOTP form
+                  value: '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Verificación · Solidaria+</title></head><body><main><h1>Verificación en dos pasos</h1><form method="post" action="/auth/mfa"><label>Código de la aplicación autenticadora <input name="otp" inputmode="numeric" autocomplete="one-time-code" required></label><input type="hidden" name="_csrf" value="token-csrf"><button type="submit">Verificar</button></form></main></body></html>'
+        "401":
+          description: No password step completed in this session (AUTH_MFA_REQUIRED cannot start here).
+          content:
+            text/html:
+              schema:
+                $ref: "#/components/schemas/HtmlPage"
+              examples:
+                noSession:
+                  summary: Page that sends the user back to sign in
+                  value: '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Sesión expirada · Solidaria+</title></head><body><main><h1>Su sesión expiró</h1><p><a href="/auth/login">Inicie sesión de nuevo</a>.</p></main></body></html>'
+    post:
+      tags: [Pages]
+      operationId: submitMfa
+      summary: Submit the second-factor code
+      description: Verifies the 6-digit TOTP code; wrong codes count as failed attempts.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/MfaForm"
+            examples:
+              validCode:
+                summary: Correct TOTP code
+                value:
+                  otp: "492039"
+                  _csrf: token-csrf
+              wrongCode:
+                summary: Wrong TOTP code
+                value:
+                  otp: "000000"
+                  _csrf: token-csrf
+      responses:
+        "302":
+          description: Second factor verified; continues to `/oauth2/authorize`.
+          headers:
+            Location:
+              description: Next step of the flow.
+              schema:
+                type: string
+                format: uri-reference
+              example: /oauth2/authorize?continue
+        "401":
+          description: Wrong code (AUTH_MFA_REQUIRED); the second factor is still pending.
+          content:
+            text/html:
+              schema:
+                $ref: "#/components/schemas/HtmlPage"
+              examples:
+                wrongCode:
+                  summary: Page with the error
+                  value: '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Verificación · Solidaria+</title></head><body><main><h1>Verificación en dos pasos</h1><p role="alert">El código no es correcto. Intente de nuevo.</p></main></body></html>'
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                wrongCode:
+                  summary: Second factor still required
+                  value:
+                    type: https://errors.solidariaplus.ec/AUTH_MFA_REQUIRED
+                    title: Second factor required
+                    status: 401
+                    code: AUTH_MFA_REQUIRED
+                    detail: A valid one-time code is required to finish the sign-in.
+                    instance: /auth/mfa
+                    correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a5e
+        "423":
+          description: Too many wrong codes; the identifier is locked for 15 minutes (AUTH_ACCOUNT_LOCKED).
+          headers:
+            Retry-After:
+              $ref: "#/components/headers/RetryAfter"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                lockedAfterMfa:
+                  summary: Locked after repeated wrong codes
+                  value:
+                    type: https://errors.solidariaplus.ec/AUTH_ACCOUNT_LOCKED
+                    title: Account locked
+                    status: 423
+                    code: AUTH_ACCOUNT_LOCKED
+                    detail: Too many failed attempts; try again in 15 minutes.
+                    instance: /auth/mfa
+                    correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a5f
+
+  /members/{memberId}/activation-codes:
+    post:
+      tags: [Activation]
+      operationId: issueActivationCode
+      summary: Issue a one-time activation code for a member
+      description: |
+        A teller issues a one-time activation code for an admitted member, or for a member who
+        forgot the password (RF-17-04, CU-07-02). The code has 8 characters, is valid 72 hours,
+        is stored only as an Argon2id hash and is returned once, to be handed over in person.
+        Issuing a new code invalidates the previous one. Records an AuditRecord
+        (`ACTIVATION_CODE_ISSUED`).
+
+        Requires role `TELLER`.
+      security:
+        - bearerAuth: []
+      x-required-roles: [TELLER]
+      parameters:
+        - $ref: "#/components/parameters/MemberId"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "201":
+          description: Activation code issued.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheNoStore"
+            Location:
+              description: Activation code resource.
+              schema:
+                type: string
+                format: uri-reference
+              example: /members/0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a90/activation-codes/0193a1c4-2b3d-7f10-8e21-5a6b7c8d9e01
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivationCode"
+              examples:
+                issued:
+                  summary: Code issued for an admitted member
+                  value:
+                    activationCodeId: 0193a1c4-2b3d-7f10-8e21-5a6b7c8d9e01
+                    memberId: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a90
+                    code: K7Q4M2XP
+                    issuedAt: "2026-11-25T15:04:05Z"
+                    expiresAt: "2026-11-28T15:04:05Z"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No member account exists for this member (MEMBER_NOT_FOUND).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                memberNotFound:
+                  summary: Unknown member
+                  value:
+                    type: https://errors.solidariaplus.ec/MEMBER_NOT_FOUND
+                    title: Member not found
+                    status: 404
+                    code: MEMBER_NOT_FOUND
+                    detail: No member account exists for this member.
+                    instance: /auth/members/0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a91/activation-codes
+                    correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a60
+        "422":
+          description: The membership ended; no code can be issued (MEMBER_NOT_ELIGIBLE).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                membershipEnded:
+                  summary: Excluded or withdrawn member
+                  value:
+                    type: https://errors.solidariaplus.ec/MEMBER_NOT_ELIGIBLE
+                    title: Member not eligible
+                    status: 422
+                    code: MEMBER_NOT_ELIGIBLE
+                    detail: The membership has ended.
+                    instance: /auth/members/0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a92/activation-codes
+                    correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a61
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /staff/authenticator-resets:
+    post:
+      tags: [Staff]
+      operationId: resetStaffAuthenticator
+      summary: Reset the authenticator of another staff member
+      description: |
+        The President or the Compliance delegate resets, in person, the multi-factor
+        authenticator of another staff member (RF-17-13, KAN-2 ADR-126). Nobody resets their own
+        authenticator, so the President and the Compliance delegate reset each other.
+
+        - The directory account travels in the body, never in the path, so it does not reach
+          access logs.
+        - The caller's token must have been obtained with the second factor (`amr` contains
+          `mfa`); otherwise AUTH_MFA_REQUIRED.
+        - The target's TOTP secret is deleted, every session of the target is revoked
+          (SessionRevoked, scope ALL_SESSIONS, reason ADMINISTRATIVE) and the target must enrol
+          a new authenticator within 24 hours.
+        - Records an AuditRecord (`STAFF_AUTHENTICATOR_RESET`).
+
+        Requires role `BOARD` with function `PRESIDENT` or `COMPLIANCE`.
+      security:
+        - bearerAuth: []
+      x-required-roles: [BOARD]
+      x-required-functions: [PRESIDENT, COMPLIANCE]
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuthenticatorResetRequest"
+            examples:
+              reset:
+                summary: The President resets a teller's authenticator
+                value:
+                  directoryAccount: ana.prue01
+              ownAccount:
+                summary: The caller tries to reset their own authenticator
+                value:
+                  directoryAccount: pres.prue01
+              withoutMfa:
+                summary: Caller token obtained without the second factor
+                value:
+                  directoryAccount: ana.prue01
+              unknownAccount:
+                summary: Directory account without a staff profile
+                value:
+                  directoryAccount: nadie.prue99
+      responses:
+        "201":
+          description: Authenticator reset; the target must enrol within 24 hours.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheNoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthenticatorReset"
+              examples:
+                reset:
+                  summary: Reset done
+                  value:
+                    staffSub: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e6f
+                    resetAt: "2026-11-25T15:10:00Z"
+                    resetBySub: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e70
+                    enrolmentDeadline: "2026-11-26T15:10:00Z"
+                    sessionsRevoked: 2
+        "400":
+          description: Invalid body (VALIDATION_FAILED).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                invalidBody:
+                  summary: Missing directory account
+                  value:
+                    type: https://errors.solidariaplus.ec/VALIDATION_FAILED
+                    title: Validation failed
+                    status: 400
+                    code: VALIDATION_FAILED
+                    detail: The request body is not valid.
+                    instance: /auth/staff/authenticator-resets
+                    correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a62
+                    errors:
+                      - field: directoryAccount
+                        reason: must not be blank
+        "401":
+          description: Missing or invalid token (UNAUTHENTICATED), or token without the second factor (AUTH_MFA_REQUIRED).
+          headers:
+            WWW-Authenticate:
+              $ref: "#/components/headers/WwwAuthenticateBearer"
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                withoutMfa:
+                  summary: Step-up to the second factor required
+                  value:
+                    type: https://errors.solidariaplus.ec/AUTH_MFA_REQUIRED
+                    title: Second factor required
+                    status: 401
+                    code: AUTH_MFA_REQUIRED
+                    detail: Sign in again with the second factor to reset an authenticator.
+                    instance: /auth/staff/authenticator-resets
+                    correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a63
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No staff profile for that directory account (NOT_FOUND).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                unknownAccount:
+                  summary: Unknown directory account
+                  value:
+                    type: https://errors.solidariaplus.ec/NOT_FOUND
+                    title: Not found
+                    status: 404
+                    code: NOT_FOUND
+                    detail: No staff profile matches the directory account.
+                    instance: /auth/staff/authenticator-resets
+                    correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a64
+        "422":
+          description: The caller tried to reset their own authenticator (SAME_PERSON_NOT_ALLOWED).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+              examples:
+                ownAccount:
+                  summary: Self-reset rejected
+                  value:
+                    type: https://errors.solidariaplus.ec/SAME_PERSON_NOT_ALLOWED
+                    title: Same person not allowed
+                    status: 422
+                    code: SAME_PERSON_NOT_ALLOWED
+                    detail: Nobody can reset their own authenticator.
+                    instance: /auth/staff/authenticator-resets
+                    correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a65
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /sessions/current:
+    delete:
+      tags: [Sessions]
+      operationId: endCurrentSession
+      summary: End the current session
+      description: |
+        Revokes the session of the token (`sid`) and its refresh token family, and publishes
+        SessionRevoked with scope SESSION and reason SIGN_OUT (RF-17-08). Access tokens already
+        issued are rejected by every service until they expire (at most 10 minutes).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "204":
+          description: Session ended.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /sessions:
+    delete:
+      tags: [Sessions]
+      operationId: endAllSessions
+      summary: End every session of the caller
+      description: |
+        Revokes every session of the caller's subject on every device, and publishes
+        SessionRevoked with scope ALL_SESSIONS and reason SIGN_OUT (RF-17-08).
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "204":
+          description: Every session ended.
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token issued by this server (claims in the AccessTokenClaims schema).
+    clientSecretBasic:
+      type: http
+      scheme: basic
+      description: Confidential clients (services) send client_id and client secret with HTTP Basic (KAN-2 ADR-124).
+
+  parameters:
+    MemberId:
+      name: memberId
+      in: path
+      required: true
+      description: Member identifier (UUIDv7) issued by MS-01.
+      schema:
+        $ref: "#/components/schemas/Uuid"
+      examples:
+        issued:
+          value: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a90
+        memberNotFound:
+          value: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a91
+        membershipEnded:
+          value: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a92
+    CorrelationId:
+      name: X-Correlation-Id
+      in: header
+      required: false
+      description: Correlation identifier of the flow; generated by API Gateway when absent.
+      schema:
+        $ref: "#/components/schemas/Uuid"
+      example: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a5b
+
+  headers:
+    CacheNoStore:
+      description: Responses with credentials are never cached (RFC 6749 §5.1).
+      schema:
+        type: string
+        const: no-store
+    PragmaNoCache:
+      description: HTTP/1.0 caches.
+      schema:
+        type: string
+        const: no-cache
+    CachePublic:
+      description: Public metadata cacheable for one hour.
+      schema:
+        type: string
+      example: public, max-age=3600
+    RetryAfter:
+      description: Seconds until the lock or the limit ends.
+      schema:
+        type: integer
+        minimum: 1
+      example: 900
+    WwwAuthenticateBearer:
+      description: Bearer challenge (RFC 6750 §3).
+      schema:
+        type: string
+      example: Bearer realm="solidaria", error="invalid_token"
+
+  responses:
+    Unauthenticated:
+      description: Missing, expired, revoked or invalid access token (UNAUTHENTICATED).
+      headers:
+        WWW-Authenticate:
+          $ref: "#/components/headers/WwwAuthenticateBearer"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            unauthenticated:
+              summary: Revoked session
+              value:
+                type: https://errors.solidariaplus.ec/UNAUTHENTICATED
+                title: Authentication required
+                status: 401
+                code: UNAUTHENTICATED
+                detail: The access token is missing, expired or revoked.
+                correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a66
+    Forbidden:
+      description: The token lacks the required role or Board function (FORBIDDEN).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            forbidden:
+              summary: Role not allowed
+              value:
+                type: https://errors.solidariaplus.ec/FORBIDDEN
+                title: Forbidden
+                status: 403
+                code: FORBIDDEN
+                detail: The caller's role does not allow this operation.
+                correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a67
+    RateLimited:
+      description: Too many requests (RATE_LIMITED).
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            rateLimited:
+              summary: Rate limit reached
+              value:
+                type: https://errors.solidariaplus.ec/RATE_LIMITED
+                title: Too many requests
+                status: 429
+                code: RATE_LIMITED
+                detail: Too many requests; retry later.
+                correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a68
+    RateLimitedOAuth:
+      description: Too many requests to an OAuth endpoint.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/OAuthError"
+          examples:
+            rateLimited:
+              summary: Rate limit reached
+              value:
+                error: temporarily_unavailable
+                error_description: Too many requests; retry later.
+    RateLimitedPage:
+      description: Too many requests from this address (RATE_LIMITED); rendered as a page.
+      headers:
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        text/html:
+          schema:
+            $ref: "#/components/schemas/HtmlPage"
+          examples:
+            rateLimited:
+              summary: Page that asks to wait
+              value: '<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Demasiadas solicitudes · Solidaria+</title></head><body><main><h1>Demasiadas solicitudes</h1><p>Espere un momento e intente de nuevo.</p></main></body></html>'
+    PasswordPolicy:
+      description: The new password does not meet the password policy (VALIDATION_FAILED).
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+          examples:
+            weakPassword:
+              summary: Password too short
+              value:
+                type: https://errors.solidariaplus.ec/VALIDATION_FAILED
+                title: Validation failed
+                status: 422
+                code: VALIDATION_FAILED
+                detail: The new password does not meet the password policy.
+                instance: /auth/activate
+                correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a69
+                errors:
+                  - field: newPassword
+                    reason: must have at least 12 characters
+
+  schemas:
+    Uuid:
+      type: string
+      format: uuid
+      description: UUIDv7 in canonical text form (KAN-15 §3.2).
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+      examples: [0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a90]
+
+    Subject:
+      type: string
+      description: Opaque subject issued by MS-17; never derived from personal data.
+      minLength: 1
+      maxLength: 64
+      examples: [0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e6f]
+
+    ClientId:
+      type: string
+      description: Registered client (apps, services, devices).
+      pattern: "^[a-z0-9][a-z0-9-]{2,63}$"
+      examples: [solidaria-web, solidaria-mobile, core-savings-service]
+
+    Role:
+      type: string
+      description: Role derived from the directory group (staff, ADR-084) or from membership (members).
+      enum: [MEMBER, TELLER, BOARD, ACCOUNTANT, EXTERNAL_CONSULTANT]
+
+    BoardFunction:
+      type: string
+      description: Function of a Board member (directory groups sp-board-president and sp-compliance-delegate).
+      enum: [PRESIDENT, COMPLIANCE]
+
+    AccessTokenClaims:
+      type: object
+      title: Access token claims
+      description: |
+        Payload of the access token: a JWT signed with ES256 (header `alg` ES256, `typ` at+jwt,
+        `kid` of the JWKS), 10-minute lifetime (KAN-2 §5.7, RNF-SEG-03). Services verify the
+        signature with `/jwks`, check `iss`, `aud` and `exp`, and reject tokens whose `sid` was
+        revoked (SessionRevoked).
+      required: [iss, aud, exp, iat, sub, roles, amr, sid]
+      properties:
+        iss:
+          type: string
+          format: uri
+          description: Issuer; equals `issuer` of the discovery document.
+          examples: [https://api.solidariaplus.ec/auth]
+        aud:
+          description: Audience of every Solidaria+ API.
+          oneOf:
+            - type: string
+              const: solidaria-api
+            - type: array
+              items:
+                type: string
+              contains:
+                const: solidaria-api
+        exp:
+          type: integer
+          description: Expiry, seconds since the epoch; at most 600 s after `iat`.
+          examples: [1795014845]
+        iat:
+          type: integer
+          description: Issue instant, seconds since the epoch.
+          examples: [1795014245]
+        jti:
+          type: string
+          description: Token identifier.
+          examples: [0193a1d0-1111-7aaa-8bbb-ccccdddd0001]
+        sub:
+          $ref: "#/components/schemas/Subject"
+        client_id:
+          $ref: "#/components/schemas/ClientId"
+        scope:
+          type: string
+          description: Space-separated granted scopes.
+          examples: [openid offline_access]
+        roles:
+          type: array
+          description: Roles of the subject; empty for service tokens (client credentials).
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/Role"
+        fn:
+          type: array
+          description: Board functions; present only for Board members that hold one.
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/BoardFunction"
+        mid:
+          $ref: "#/components/schemas/Uuid"
+          description: Member identifier; present only in member tokens.
+        amr:
+          type: array
+          description: Authentication methods (RFC 8176); `mfa` when the second factor was used.
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: [pwd, otp, mfa, client_secret]
+        sid:
+          $ref: "#/components/schemas/Uuid"
+          description: Session identifier; the key of SessionRevoked and of the revocation cache.
+      allOf:
+        - if:
+            properties:
+              roles:
+                contains:
+                  const: MEMBER
+            required: [roles]
+          then:
+            required: [mid]
+        - if:
+            properties:
+              fn:
+                minItems: 1
+            required: [fn]
+          then:
+            properties:
+              roles:
+                contains:
+                  const: BOARD
+      examples:
+        - iss: https://api.solidariaplus.ec/auth
+          aud: solidaria-api
+          exp: 1795014845
+          iat: 1795014245
+          jti: 0193a1d0-1111-7aaa-8bbb-ccccdddd0001
+          sub: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e71
+          client_id: solidaria-mobile
+          scope: openid offline_access
+          roles: [MEMBER]
+          mid: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a90
+          amr: [pwd, otp, mfa]
+          sid: 0193a1d0-2222-7aaa-8bbb-ccccdddd0002
+        - iss: https://api.solidariaplus.ec/auth
+          aud: solidaria-api
+          exp: 1795014845
+          iat: 1795014245
+          sub: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e70
+          client_id: solidaria-web
+          roles: [BOARD]
+          fn: [PRESIDENT]
+          amr: [pwd, otp, mfa]
+          sid: 0193a1d0-2222-7aaa-8bbb-ccccdddd0003
+
+    OpenIdProviderMetadata:
+      type: object
+      description: Authorization server metadata (RFC 8414, OpenID Connect Discovery 1.0).
+      required:
+        - issuer
+        - authorization_endpoint
+        - token_endpoint
+        - jwks_uri
+        - response_types_supported
+        - subject_types_supported
+        - id_token_signing_alg_values_supported
+      properties:
+        issuer:
+          type: string
+          format: uri
+        authorization_endpoint:
+          type: string
+          format: uri
+        token_endpoint:
+          type: string
+          format: uri
+        revocation_endpoint:
+          type: string
+          format: uri
+        jwks_uri:
+          type: string
+          format: uri
+        scopes_supported:
+          type: array
+          items:
+            type: string
+        response_types_supported:
+          type: array
+          items:
+            type: string
+        grant_types_supported:
+          type: array
+          items:
+            type: string
+        code_challenge_methods_supported:
+          type: array
+          items:
+            type: string
+        token_endpoint_auth_methods_supported:
+          type: array
+          items:
+            type: string
+        subject_types_supported:
+          type: array
+          items:
+            type: string
+        id_token_signing_alg_values_supported:
+          type: array
+          items:
+            type: string
+
+    JsonWebKeySet:
+      type: object
+      description: JWK Set (RFC 7517 §5).
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/JsonWebKey"
+
+    JsonWebKey:
+      type: object
+      description: EC P-256 public key for ES256 (RFC 7518 §6.2).
+      required: [kty, crv, x, y, kid, use, alg]
+      properties:
+        kty:
+          type: string
+          const: EC
+        crv:
+          type: string
+          const: P-256
+        x:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{43}$"
+        y:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{43}$"
+        kid:
+          type: string
+        use:
+          type: string
+          const: sig
+        alg:
+          type: string
+          const: ES256
+
+    TokenRequest:
+      description: Form parameters of the token endpoint, by grant type.
+      oneOf:
+        - $ref: "#/components/schemas/AuthorizationCodeGrant"
+        - $ref: "#/components/schemas/RefreshTokenGrant"
+        - $ref: "#/components/schemas/ClientCredentialsGrant"
+      discriminator:
+        propertyName: grant_type
+        mapping:
+          authorization_code: "#/components/schemas/AuthorizationCodeGrant"
+          refresh_token: "#/components/schemas/RefreshTokenGrant"
+          client_credentials: "#/components/schemas/ClientCredentialsGrant"
+
+    AuthorizationCodeGrant:
+      type: object
+      required: [grant_type, code, redirect_uri, client_id, code_verifier]
+      properties:
+        grant_type:
+          type: string
+          const: authorization_code
+        code:
+          type: string
+          description: Code returned by `/oauth2/authorize`; single use, short-lived.
+        redirect_uri:
+          type: string
+          format: uri
+          description: Same value sent to `/oauth2/authorize`.
+        client_id:
+          $ref: "#/components/schemas/ClientId"
+        code_verifier:
+          type: string
+          description: PKCE verifier (RFC 7636 §4.1).
+          pattern: "^[A-Za-z0-9._~-]{43,128}$"
+
+    RefreshTokenGrant:
+      type: object
+      required: [grant_type, refresh_token, client_id]
+      properties:
+        grant_type:
+          type: string
+          const: refresh_token
+        refresh_token:
+          type: string
+          description: Current refresh token; it is replaced by the one in the response.
+        client_id:
+          $ref: "#/components/schemas/ClientId"
+        scope:
+          type: string
+          description: Optional subset of the granted scopes.
+
+    ClientCredentialsGrant:
+      type: object
+      description: Service-to-service token; the client authenticates with HTTP Basic.
+      required: [grant_type]
+      properties:
+        grant_type:
+          type: string
+          const: client_credentials
+        scope:
+          type: string
+          description: Optional subset of the scopes registered for the service.
+
+    TokenResponse:
+      type: object
+      description: Successful token response (RFC 6749 §5.1).
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+          description: ES256 JWT; its payload is described by AccessTokenClaims.
+          contentMediaType: application/jwt
+          contentSchema:
+            $ref: "#/components/schemas/AccessTokenClaims"
+        token_type:
+          type: string
+          const: Bearer
+        expires_in:
+          type: integer
+          description: Lifetime of the access token in seconds.
+          const: 600
+        refresh_token:
+          type: string
+          description: Rotated refresh token; absent for client credentials.
+        id_token:
+          type: string
+          description: OpenID Connect ID token, when `openid` was requested.
+          contentMediaType: application/jwt
+        scope:
+          type: string
+          description: Granted scopes.
+
+    RevocationRequest:
+      type: object
+      description: Token revocation request (RFC 7009 §2.1).
+      required: [token]
+      properties:
+        token:
+          type: string
+        token_type_hint:
+          type: string
+          enum: [refresh_token, access_token]
+        client_id:
+          $ref: "#/components/schemas/ClientId"
+
+    OAuthError:
+      type: object
+      description: OAuth 2.0 error response (RFC 6749 §5.2, RFC 7009 §2.2.1).
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum:
+            - invalid_request
+            - invalid_client
+            - invalid_grant
+            - unauthorized_client
+            - unsupported_grant_type
+            - invalid_scope
+            - unsupported_token_type
+            - server_error
+            - temporarily_unavailable
+        error_description:
+          type: string
+          description: Human-readable text for the developer; never shown to the end user.
+        error_uri:
+          type: string
+          format: uri
+
+    Problem:
+      type: object
+      description: Problem details (RFC 9457) with the code of the shared catalog (KAN-15 §4).
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+          format: uri
+          pattern: "^https://errors\\.solidariaplus\\.ec/[A-Z][A-Z0-9_]*$"
+          description: "`https://errors.solidariaplus.ec/<code>`."
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+          description: |
+            Code of `contracts/errors/error-codes.yaml`; equals the last segment of `type`. Open
+            set (new codes are additive). MS-17 returns UNAUTHENTICATED, FORBIDDEN, NOT_FOUND,
+            VALIDATION_FAILED, RATE_LIMITED, SAME_PERSON_NOT_ALLOWED, MEMBER_NOT_FOUND,
+            MEMBER_NOT_ELIGIBLE, AUTH_ACCOUNT_LOCKED, AUTH_ACTIVATION_CODE_INVALID and
+            AUTH_MFA_REQUIRED.
+          pattern: "^[A-Z][A-Z0-9_]*$"
+        correlationId:
+          $ref: "#/components/schemas/Uuid"
+        errors:
+          type: array
+          description: Offending fields, for VALIDATION_FAILED.
+          items:
+            type: object
+            required: [field, reason]
+            properties:
+              field:
+                type: string
+              reason:
+                type: string
+
+    HtmlPage:
+      type: string
+      description: Server-rendered HTML page (Spanish UI).
+
+    LoginForm:
+      type: object
+      required: [username, password, _csrf]
+      properties:
+        username:
+          type: string
+          description: Member number (members) or directory account (staff).
+          minLength: 1
+          maxLength: 128
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 128
+        _csrf:
+          type: string
+          description: CSRF token rendered in the page.
+
+    ActivationForm:
+      type: object
+      required: [memberNumber, activationCode, newPassword, _csrf]
+      properties:
+        memberNumber:
+          type: string
+          description: Short number of the membership card.
+          pattern: "^[0-9]{1,10}$"
+        activationCode:
+          type: string
+          description: One-time code issued by the teller.
+          pattern: "^[A-Z2-9]{8}$"
+        newPassword:
+          type: string
+          format: password
+          minLength: 12
+          maxLength: 128
+        _csrf:
+          type: string
+
+    MfaForm:
+      type: object
+      required: [otp, _csrf]
+      properties:
+        otp:
+          type: string
+          description: 6-digit TOTP code (RFC 6238).
+          pattern: "^[0-9]{6}$"
+        _csrf:
+          type: string
+
+    ActivationCode:
+      type: object
+      description: Activation code issued for a member; `code` is shown only in this response.
+      required: [activationCodeId, memberId, code, issuedAt, expiresAt]
+      properties:
+        activationCodeId:
+          $ref: "#/components/schemas/Uuid"
+        memberId:
+          $ref: "#/components/schemas/Uuid"
+        code:
+          type: string
+          description: 8 characters without ambiguous symbols (no 0, 1, O, I).
+          pattern: "^[A-Z2-9]{8}$"
+        issuedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          description: 72 hours after `issuedAt`.
+
+    AuthenticatorResetRequest:
+      type: object
+      required: [directoryAccount]
+      additionalProperties: false
+      properties:
+        directoryAccount:
+          type: string
+          description: sAMAccountName of the target staff member (personal datum; never in a path or an event).
+          minLength: 1
+          maxLength: 64
+          pattern: "^[A-Za-z0-9._-]+$"
+
+    AuthenticatorReset:
+      type: object
+      description: Result of an authenticator reset; identifies people only by opaque subjects.
+      required: [staffSub, resetAt, resetBySub, enrolmentDeadline, sessionsRevoked]
+      properties:
+        staffSub:
+          $ref: "#/components/schemas/Subject"
+        resetAt:
+          type: string
+          format: date-time
+        resetBySub:
+          $ref: "#/components/schemas/Subject"
+        enrolmentDeadline:
+          type: string
+          format: date-time
+          description: 24 hours after `resetAt`; the target enrols a new authenticator before it.
+        sessionsRevoked:
+          type: integer
+          minimum: 0
+          description: Number of sessions of the target revoked by the reset.
+
+  examples:
+    OpenIdProviderMetadata:
+      summary: Discovery document of PROD
+      value:
+        issuer: https://api.solidariaplus.ec/auth
+        authorization_endpoint: https://api.solidariaplus.ec/auth/oauth2/authorize
+        token_endpoint: https://api.solidariaplus.ec/auth/oauth2/token
+        revocation_endpoint: https://api.solidariaplus.ec/auth/oauth2/revoke
+        jwks_uri: https://api.solidariaplus.ec/auth/jwks
+        scopes_supported: [openid, offline_access]
+        response_types_supported: [code]
+        grant_types_supported: [authorization_code, refresh_token, client_credentials]
+        code_challenge_methods_supported: [S256]
+        token_endpoint_auth_methods_supported: [none, client_secret_basic]
+        subject_types_supported: [public]
+        id_token_signing_alg_values_supported: [ES256]
+    JsonWebKeySet:
+      summary: Current and previous signing keys during a rotation
+      value:
+        keys:
+          - kty: EC
+            crv: P-256
+            kid: ia-2026-11
+            use: sig
+            alg: ES256
+            x: f83OJ3D2xF1Bg8vub9tLe1gHMzV76e8Tus9uPHvRVEU
+            y: x_FEzRu9m36HLN_tue659LNpXW6pCyStikYjKIWI5a0
+          - kty: EC
+            crv: P-256
+            kid: ia-2026-10
+            use: sig
+            alg: ES256
+            x: MKBCTNIcKUSDii11ySs3526iDZ8AiTo7Tu6KPAqv7D4
+            y: 4Etl6SRW2YiLUrN5vfvVHuhp7x8PxltmWWlbbM4IFyM
+    TokenRequestAuthorizationCode:
+      summary: The member app exchanges the code with PKCE
+      value:
+        grant_type: authorization_code
+        code: SplxlOBeZQQYbYS6WxSbIA
+        redirect_uri: https://app.solidariaplus.ec/auth/callback
+        client_id: solidaria-mobile
+        code_verifier: dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk
+    TokenRequestRefreshToken:
+      summary: The member app renews the access token
+      value:
+        grant_type: refresh_token
+        refresh_token: 8xLOxBtZp8.current.Fm2k1Qz9Yw
+        client_id: solidaria-mobile
+    TokenRequestReusedRefreshToken:
+      summary: An already used refresh token is presented again
+      value:
+        grant_type: refresh_token
+        refresh_token: 8xLOxBtZp8.previous.Fm2k1Qz9Yw
+        client_id: solidaria-mobile
+    TokenRequestClientCredentials:
+      summary: A service requests a machine-to-machine token (Basic credentials in the header)
+      value:
+        grant_type: client_credentials
+    TokenResponseUser:
+      summary: Tokens of a member session
+      value:
+        access_token: eyJhbGciOiJFUzI1NiIsInR5cCI6ImF0K2p3dCIsImtpZCI6ImlhLTIwMjYtMTEifQ.eyJzdWIiOiIwMTkyZTdkMS01YTZiLTdjOGQtOWUwZi0xYTJiM2M0ZDVlNzEifQ.c2lnbmF0dXJl
+        token_type: Bearer
+        expires_in: 600
+        refresh_token: 8xLOxBtZp8.rotated.Fm2k1Qz9Yw
+        id_token: eyJhbGciOiJFUzI1NiIsImtpZCI6ImlhLTIwMjYtMTEifQ.eyJzdWIiOiIwMTkyZTdkMS01YTZiLTdjOGQtOWUwZi0xYTJiM2M0ZDVlNzEifQ.c2lnbmF0dXJl
+        scope: openid offline_access
+    TokenResponseService:
+      summary: Machine-to-machine token of a service
+      value:
+        access_token: eyJhbGciOiJFUzI1NiIsInR5cCI6ImF0K2p3dCIsImtpZCI6ImlhLTIwMjYtMTEifQ.eyJzdWIiOiJjb3JlLXNhdmluZ3Mtc2VydmljZSJ9.c2lnbmF0dXJl
+        token_type: Bearer
+        expires_in: 600

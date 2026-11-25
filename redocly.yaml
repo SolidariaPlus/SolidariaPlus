@@ -1,0 +1,9 @@
+apis:
+  identity-access@v1:
+    root: contracts/openapi/identity-access.openapi.yaml
+
+extends:
+  - recommended
+
+rules:
+  no-server-example.com: off
