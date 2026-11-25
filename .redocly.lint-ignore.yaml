@@ -1,0 +1,9 @@
+# Accepted Redocly lint exceptions; every entry needs a reason.
+# operation-2xx-response: the OAuth authorization endpoint and the server-rendered form posts
+# answer 302 by design (RFC 6749 §4.1.2); they never answer 2XX.
+contracts/openapi/identity-access.openapi.yaml:
+  operation-2xx-response:
+    - "#/paths/~1oauth2~1authorize/get/responses"
+    - "#/paths/~1login/post/responses"
+    - "#/paths/~1activate/post/responses"
+    - "#/paths/~1mfa/post/responses"

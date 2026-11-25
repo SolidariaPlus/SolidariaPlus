@@ -1,0 +1,730 @@
+# MS-17 identity-access-service: event contract (KAN-37).
+# Source: KAN-15 D-07 §1.1 and §1.2 (SessionRevoked, consumed events), KAN-15 D-01 §1.1 (data of
+# MemberAdmitted and MembershipEnded), KAN-15 §3.3 (CloudEvents envelope) and §5.1 (AuditRecord).
+# Events never carry personal data (KAN-2 P-05): people are opaque subjects, members are memberId.
+asyncapi: 3.0.0
+
+info:
+  title: Solidaria+ identity-access-service (MS-17) events
+  version: 1.0.0
+  description: |
+    Events published and consumed by MS-17 identity-access-service (bounded context D-07).
+
+    - Publishes **SessionRevoked** on `identity-access.events`, read by every service and the push
+      dispatcher to reject the tokens of a revoked session until they expire (KAN-2 ADR-083).
+    - Publishes **AuditRecord** on the restricted topic `audit.records`, read by MS-15.
+    - Consumes **MemberAdmitted** (creates the member account) and **MembershipEnded** (disables
+      the account and revokes every session) from `member-management.events` of MS-01.
+
+    Every message is a CloudEvent 1.0 in structured mode (`application/cloudevents+json`);
+    the Kafka key equals the CloudEvents `subject`. Within a version only additive changes are
+    allowed and consumers ignore unknown fields; an incompatible change is a new type `…v2`.
+
+    Failed consumption is retried on `member-management.events.identity-access.retry` and parked
+    on `member-management.events.identity-access.dlt` (KAN-2 ADR-049, `infra/messaging/kafka`).
+  contact:
+    name: Solidaria+ team
+    url: https://solidariaplus.atlassian.net/wiki/spaces/SO/pages/21430274
+  license:
+    name: Proprietary
+  tags:
+    - name: identity
+    - name: audit
+    - name: membership
+
+defaultContentType: application/cloudevents+json
+
+servers:
+  local:
+    host: localhost:9094
+    protocol: kafka
+    description: Kafka of compose.yaml (EXTERNAL listener, SASL_PLAINTEXT with SCRAM-SHA-512).
+    security:
+      - $ref: "#/components/securitySchemes/scram"
+  a1:
+    host: "{brokerHost}:9092"
+    protocol: kafka-secure
+    description: Self-hosted Kafka of account A1 (KAN-2 ADR-122), SASL_SSL with SCRAM-SHA-512.
+    variables:
+      brokerHost:
+        description: Private address of the broker instance of the environment (QA or PROD).
+        default: broker.a1.solidaria.internal
+    security:
+      - $ref: "#/components/securitySchemes/scram"
+
+channels:
+  identityAccessEvents:
+    address: identity-access.events
+    title: identity-access.events
+    description: Domain events of MS-17; key = opaque subject.
+    messages:
+      SessionRevoked:
+        $ref: "#/components/messages/SessionRevoked"
+    bindings:
+      $ref: "#/components/channelBindings/sevenDayTopic"
+
+  auditRecords:
+    address: audit.records
+    title: audit.records (restricted)
+    description: Cross-cutting audit trail written by every service and read only by MS-15 (KAN-15 §5.1).
+    messages:
+      AuditRecord:
+        $ref: "#/components/messages/AuditRecord"
+    bindings:
+      $ref: "#/components/channelBindings/sevenDayTopic"
+
+  memberManagementEvents:
+    address: member-management.events
+    title: member-management.events
+    description: Domain events of MS-01; MS-17 reads only MemberAdmitted and MembershipEnded.
+    messages:
+      MemberAdmitted:
+        $ref: "#/components/messages/MemberAdmitted"
+      MembershipEnded:
+        $ref: "#/components/messages/MembershipEnded"
+    bindings:
+      $ref: "#/components/channelBindings/sevenDayTopic"
+
+operations:
+  publishSessionRevoked:
+    action: send
+    channel:
+      $ref: "#/channels/identityAccessEvents"
+    title: Publish SessionRevoked
+    summary: A session, or every session of a subject, was revoked.
+    description: |
+      Published through the outbox when a user signs out (`DELETE /sessions/current`,
+      `DELETE /sessions`, `POST /oauth2/revoke`), when a reused refresh token is detected, when a
+      membership ends, when a directory account is disabled and after an authenticator reset.
+    messages:
+      - $ref: "#/channels/identityAccessEvents/messages/SessionRevoked"
+    bindings:
+      $ref: "#/components/operationBindings/producer"
+
+  publishAuditRecord:
+    action: send
+    channel:
+      $ref: "#/channels/auditRecords"
+    title: Publish AuditRecord
+    summary: Records an action or an access of MS-17 in the immutable audit ledger.
+    messages:
+      - $ref: "#/channels/auditRecords/messages/AuditRecord"
+    bindings:
+      $ref: "#/components/operationBindings/producer"
+
+  receiveMemberAdmitted:
+    action: receive
+    channel:
+      $ref: "#/channels/memberManagementEvents"
+    title: Consume MemberAdmitted
+    summary: Creates the member account and its opaque subject, pending activation.
+    description: Idempotent by CloudEvents `id` (table processed_events).
+    messages:
+      - $ref: "#/channels/memberManagementEvents/messages/MemberAdmitted"
+    bindings:
+      $ref: "#/components/operationBindings/consumer"
+
+  receiveMembershipEnded:
+    action: receive
+    channel:
+      $ref: "#/channels/memberManagementEvents"
+    title: Consume MembershipEnded
+    summary: Disables the member account and revokes every session (SessionRevoked, MEMBERSHIP_ENDED).
+    description: Idempotent by CloudEvents `id` (table processed_events).
+    messages:
+      - $ref: "#/channels/memberManagementEvents/messages/MembershipEnded"
+    bindings:
+      $ref: "#/components/operationBindings/consumer"
+
+components:
+  securitySchemes:
+    scram:
+      type: scramSha512
+      description: One SCRAM-SHA-512 user per service (infra/messaging/kafka/users.conf); ACLs in acls.conf.
+
+  channelBindings:
+    sevenDayTopic:
+      kafka:
+        partitions: 3
+        topicConfiguration:
+          retention.ms: 604800000
+          cleanup.policy: [delete]
+        bindingVersion: 0.5.0
+
+  operationBindings:
+    producer:
+      kafka:
+        clientId:
+          type: string
+          const: identity-access-service
+        bindingVersion: 0.5.0
+    consumer:
+      kafka:
+        groupId:
+          type: string
+          const: identity-access-service
+        clientId:
+          type: string
+          const: identity-access-service
+        bindingVersion: 0.5.0
+
+  messages:
+    SessionRevoked:
+      name: SessionRevoked
+      title: SessionRevoked v1
+      summary: A session or every session of a subject was revoked (KAN-2 ADR-083).
+      description: |
+        Consumers reject any access token whose `sid` (scope SESSION) or `sub` (scope
+        ALL_SESSIONS, tokens issued before `revokedAt`) matches, until `tokensExpireBy`.
+      contentType: application/cloudevents+json
+      headers:
+        $ref: "#/components/schemas/KafkaHeaders"
+      payload:
+        $ref: "#/components/schemas/SessionRevokedEvent"
+      bindings:
+        kafka:
+          key:
+            $ref: "#/components/schemas/Subject"
+          bindingVersion: 0.5.0
+      examples:
+        - name: signOut
+          summary: A member signs out of the current session
+          headers:
+            content-type: application/cloudevents+json
+          payload:
+            specversion: "1.0"
+            id: 0193a1e0-0a01-7b2c-8d3e-4f5a6b7c8d01
+            source: /services/identity-access-service
+            type: ec.solidariaplus.identity.SessionRevoked.v1
+            subject: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e71
+            time: "2026-11-25T15:20:00Z"
+            datacontenttype: application/json
+            dataschema: urn:solidariaplus:schema:identity:SessionRevoked:v1
+            correlationid: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a70
+            traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+            data:
+              subject: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e71
+              sessionId: 0193a1d0-2222-7aaa-8bbb-ccccdddd0002
+              scope: SESSION
+              reason: SIGN_OUT
+              revokedAt: "2026-11-25T15:20:00Z"
+              tokensExpireBy: "2026-11-25T15:30:00Z"
+        - name: refreshTokenReuse
+          summary: A reused refresh token revoked its session
+          headers:
+            content-type: application/cloudevents+json
+          payload:
+            specversion: "1.0"
+            id: 0193a1e0-0a01-7b2c-8d3e-4f5a6b7c8d02
+            source: /services/identity-access-service
+            type: ec.solidariaplus.identity.SessionRevoked.v1
+            subject: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e71
+            time: "2026-11-25T15:25:00Z"
+            datacontenttype: application/json
+            dataschema: urn:solidariaplus:schema:identity:SessionRevoked:v1
+            correlationid: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a71
+            data:
+              subject: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e71
+              sessionId: 0193a1d0-2222-7aaa-8bbb-ccccdddd0004
+              scope: SESSION
+              reason: REFRESH_TOKEN_REUSE
+              revokedAt: "2026-11-25T15:25:00Z"
+              tokensExpireBy: "2026-11-25T15:35:00Z"
+        - name: membershipEnded
+          summary: Every session of an excluded member is revoked
+          headers:
+            content-type: application/cloudevents+json
+          payload:
+            specversion: "1.0"
+            id: 0193a1e0-0a01-7b2c-8d3e-4f5a6b7c8d03
+            source: /services/identity-access-service
+            type: ec.solidariaplus.identity.SessionRevoked.v1
+            subject: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e72
+            time: "2026-11-25T16:00:01Z"
+            datacontenttype: application/json
+            dataschema: urn:solidariaplus:schema:identity:SessionRevoked:v1
+            correlationid: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a72
+            causationid: 0193a1f0-3c01-7d2e-8f3a-4b5c6d7e8f02
+            data:
+              subject: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e72
+              scope: ALL_SESSIONS
+              reason: MEMBERSHIP_ENDED
+              revokedAt: "2026-11-25T16:00:01Z"
+              tokensExpireBy: "2026-11-25T16:10:01Z"
+        - name: authenticatorReset
+          summary: An authenticator reset revokes every session of the staff member
+          headers:
+            content-type: application/cloudevents+json
+          payload:
+            specversion: "1.0"
+            id: 0193a1e0-0a01-7b2c-8d3e-4f5a6b7c8d04
+            source: /services/identity-access-service
+            type: ec.solidariaplus.identity.SessionRevoked.v1
+            subject: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e6f
+            time: "2026-11-25T15:10:00Z"
+            datacontenttype: application/json
+            dataschema: urn:solidariaplus:schema:identity:SessionRevoked:v1
+            correlationid: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a73
+            data:
+              subject: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e6f
+              scope: ALL_SESSIONS
+              reason: ADMINISTRATIVE
+              revokedAt: "2026-11-25T15:10:00Z"
+              tokensExpireBy: "2026-11-25T15:20:00Z"
+
+    AuditRecord:
+      name: AuditRecord
+      title: AuditRecord v1
+      summary: An action or an access recorded by MS-17 for the immutable audit ledger (KAN-15 §5.1).
+      contentType: application/cloudevents+json
+      headers:
+        $ref: "#/components/schemas/KafkaHeaders"
+      payload:
+        $ref: "#/components/schemas/AuditRecordEvent"
+      bindings:
+        kafka:
+          key:
+            type: string
+            description: entityId of the record.
+          bindingVersion: 0.5.0
+      examples:
+        - name: activationCodeIssued
+          summary: A teller issued an activation code
+          headers:
+            content-type: application/cloudevents+json
+          payload:
+            specversion: "1.0"
+            id: 0193a1e0-0b01-7b2c-8d3e-4f5a6b7c8d11
+            source: /services/identity-access-service
+            type: ec.solidariaplus.compliance.AuditRecord.v1
+            subject: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a90
+            time: "2026-11-25T15:04:05Z"
+            datacontenttype: application/json
+            dataschema: urn:solidariaplus:schema:compliance:AuditRecord:v1
+            correlationid: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a74
+            data:
+              recordId: 0193a1e0-0b02-7b2c-8d3e-4f5a6b7c8d12
+              recordType: ACTION
+              action: ACTIVATION_CODE_ISSUED
+              actorSub: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e73
+              actorRole: TELLER
+              workstationId: VENTANILLA-01
+              entityType: MemberAccount
+              entityId: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a90
+              outcome: SUCCESS
+              occurredAt: "2026-11-25T15:04:05Z"
+        - name: authenticatorReset
+          summary: The President reset the authenticator of a staff member
+          headers:
+            content-type: application/cloudevents+json
+          payload:
+            specversion: "1.0"
+            id: 0193a1e0-0b01-7b2c-8d3e-4f5a6b7c8d13
+            source: /services/identity-access-service
+            type: ec.solidariaplus.compliance.AuditRecord.v1
+            subject: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e6f
+            time: "2026-11-25T15:10:00Z"
+            datacontenttype: application/json
+            dataschema: urn:solidariaplus:schema:compliance:AuditRecord:v1
+            correlationid: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a73
+            data:
+              recordId: 0193a1e0-0b02-7b2c-8d3e-4f5a6b7c8d14
+              recordType: ACTION
+              action: STAFF_AUTHENTICATOR_RESET
+              actorSub: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e70
+              actorRole: BOARD
+              entityType: StaffProfile
+              entityId: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e6f
+              outcome: SUCCESS
+              occurredAt: "2026-11-25T15:10:00Z"
+        - name: resetDenied
+          summary: A Board member without a function tried to reset an authenticator
+          headers:
+            content-type: application/cloudevents+json
+          payload:
+            specversion: "1.0"
+            id: 0193a1e0-0b01-7b2c-8d3e-4f5a6b7c8d15
+            source: /services/identity-access-service
+            type: ec.solidariaplus.compliance.AuditRecord.v1
+            subject: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e6f
+            time: "2026-11-25T15:12:00Z"
+            datacontenttype: application/json
+            dataschema: urn:solidariaplus:schema:compliance:AuditRecord:v1
+            correlationid: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a75
+            data:
+              recordId: 0193a1e0-0b02-7b2c-8d3e-4f5a6b7c8d16
+              recordType: ACTION
+              action: STAFF_AUTHENTICATOR_RESET
+              actorSub: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e74
+              actorRole: BOARD
+              entityType: StaffProfile
+              entityId: 0192e7d1-5a6b-7c8d-9e0f-1a2b3c4d5e6f
+              outcome: DENIED
+              occurredAt: "2026-11-25T15:12:00Z"
+
+    MemberAdmitted:
+      name: MemberAdmitted
+      title: MemberAdmitted v1
+      summary: The Board admitted the candidate; the member is Active (KAN-15 D-01 §1.1).
+      contentType: application/cloudevents+json
+      headers:
+        $ref: "#/components/schemas/KafkaHeaders"
+      payload:
+        $ref: "#/components/schemas/MemberAdmittedEvent"
+      bindings:
+        kafka:
+          key:
+            $ref: "#/components/schemas/Uuid"
+          bindingVersion: 0.5.0
+      examples:
+        - name: memberAdmitted
+          summary: Member 000123 is admitted
+          headers:
+            content-type: application/cloudevents+json
+          payload:
+            specversion: "1.0"
+            id: 0193a1f0-3c01-7d2e-8f3a-4b5c6d7e8f01
+            source: /services/member-management-service
+            type: ec.solidariaplus.membership.MemberAdmitted.v1
+            subject: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a90
+            time: "2026-11-24T21:00:00Z"
+            datacontenttype: application/json
+            dataschema: urn:solidariaplus:schema:membership:MemberAdmitted:v1
+            correlationid: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a76
+            data:
+              memberId: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a90
+              memberNumber: "000123"
+              certificateNumber: 123
+              admissionDate: "2026-11-24"
+              admittedAt: "2026-11-24T21:00:00Z"
+
+    MembershipEnded:
+      name: MembershipEnded
+      title: MembershipEnded v1
+      summary: The member was excluded or withdrew (KAN-15 D-01 §1.1).
+      contentType: application/cloudevents+json
+      headers:
+        $ref: "#/components/schemas/KafkaHeaders"
+      payload:
+        $ref: "#/components/schemas/MembershipEndedEvent"
+      bindings:
+        kafka:
+          key:
+            $ref: "#/components/schemas/Uuid"
+          bindingVersion: 0.5.0
+      examples:
+        - name: memberExcluded
+          summary: The assembly excluded a member
+          headers:
+            content-type: application/cloudevents+json
+          payload:
+            specversion: "1.0"
+            id: 0193a1f0-3c01-7d2e-8f3a-4b5c6d7e8f02
+            source: /services/member-management-service
+            type: ec.solidariaplus.membership.MembershipEnded.v1
+            subject: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a92
+            time: "2026-11-25T16:00:00Z"
+            datacontenttype: application/json
+            dataschema: urn:solidariaplus:schema:membership:MembershipEnded:v1
+            correlationid: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a72
+            data:
+              memberId: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a92
+              endType: EXCLUDED
+              assemblyMinutes:
+                number: AG-2026-07
+                date: "2026-11-22"
+              endedAt: "2026-11-25T16:00:00Z"
+        - name: memberWithdrew
+          summary: A member withdrew voluntarily
+          headers:
+            content-type: application/cloudevents+json
+          payload:
+            specversion: "1.0"
+            id: 0193a1f0-3c01-7d2e-8f3a-4b5c6d7e8f03
+            source: /services/member-management-service
+            type: ec.solidariaplus.membership.MembershipEnded.v1
+            subject: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a93
+            time: "2026-11-25T17:30:00Z"
+            datacontenttype: application/json
+            dataschema: urn:solidariaplus:schema:membership:MembershipEnded:v1
+            correlationid: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a77
+            data:
+              memberId: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a93
+              endType: WITHDRAWN
+              endedAt: "2026-11-25T17:30:00Z"
+
+  schemas:
+    Uuid:
+      type: string
+      format: uuid
+      description: UUIDv7 in canonical text form (KAN-15 §3.2).
+      pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+
+    Subject:
+      type: string
+      description: Opaque subject issued by MS-17; never derived from personal data.
+      minLength: 1
+      maxLength: 64
+
+    KafkaHeaders:
+      type: object
+      description: Kafka record headers of a structured-mode CloudEvent.
+      required: [content-type]
+      properties:
+        content-type:
+          type: string
+          const: application/cloudevents+json
+
+    CloudEventEnvelope:
+      type: object
+      description: CloudEvents 1.0 structured envelope (KAN-15 §3.3).
+      required:
+        [
+          specversion,
+          id,
+          source,
+          type,
+          subject,
+          time,
+          datacontenttype,
+          dataschema,
+          correlationid,
+          data,
+        ]
+      properties:
+        specversion:
+          type: string
+          const: "1.0"
+        id:
+          $ref: "#/components/schemas/Uuid"
+          description: Event identifier; the idempotency key of every consumer.
+        source:
+          type: string
+          format: uri-reference
+          description: "`/services/<service-name>` of the producer."
+        type:
+          type: string
+          description: "`ec.solidariaplus.<context>.<Event>.v<major>`."
+          pattern: "^ec\\.solidariaplus\\.[a-z]+\\.[A-Za-z]+\\.v[0-9]+$"
+        subject:
+          type: string
+          description: Aggregate identifier; equals the Kafka key.
+          minLength: 1
+        time:
+          type: string
+          format: date-time
+          description: When the fact happened (UTC).
+        datacontenttype:
+          type: string
+          const: application/json
+        dataschema:
+          type: string
+          format: uri
+          description: "`urn:solidariaplus:schema:<context>:<Event>:v<major>`."
+        correlationid:
+          $ref: "#/components/schemas/Uuid"
+          description: Propagated from the request that started the flow.
+        causationid:
+          $ref: "#/components/schemas/Uuid"
+          description: Identifier of the event or command that caused this one (optional).
+        traceparent:
+          type: string
+          description: W3C trace context (optional), for AWS X-Ray.
+          pattern: "^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"
+        data:
+          type: object
+
+    SessionRevokedEvent:
+      allOf:
+        - $ref: "#/components/schemas/CloudEventEnvelope"
+        - type: object
+          properties:
+            source:
+              const: /services/identity-access-service
+            type:
+              const: ec.solidariaplus.identity.SessionRevoked.v1
+            dataschema:
+              const: urn:solidariaplus:schema:identity:SessionRevoked:v1
+            data:
+              $ref: "#/components/schemas/SessionRevokedData"
+
+    SessionRevokedData:
+      type: object
+      description: Data of SessionRevoked v1 (KAN-15 D-07 §1.1).
+      required: [subject, scope, reason, revokedAt, tokensExpireBy]
+      properties:
+        subject:
+          $ref: "#/components/schemas/Subject"
+        sessionId:
+          $ref: "#/components/schemas/Uuid"
+          description: Revoked session (`sid` claim); present when scope is SESSION.
+        scope:
+          type: string
+          enum: [SESSION, ALL_SESSIONS]
+          description: One session, or every session of the subject.
+        reason:
+          type: string
+          enum:
+            [
+              SIGN_OUT,
+              REFRESH_TOKEN_REUSE,
+              MEMBERSHIP_ENDED,
+              DIRECTORY_ACCOUNT_DISABLED,
+              ADMINISTRATIVE,
+            ]
+        revokedAt:
+          type: string
+          format: date-time
+        tokensExpireBy:
+          type: string
+          format: date-time
+          description: Instant after which no access token of the revoked sessions is valid (revokedAt + at most 10 minutes).
+      if:
+        properties:
+          scope:
+            const: SESSION
+      then:
+        required: [sessionId]
+
+    AuditRecordEvent:
+      allOf:
+        - $ref: "#/components/schemas/CloudEventEnvelope"
+        - type: object
+          properties:
+            source:
+              const: /services/identity-access-service
+            type:
+              const: ec.solidariaplus.compliance.AuditRecord.v1
+            dataschema:
+              const: urn:solidariaplus:schema:compliance:AuditRecord:v1
+            data:
+              $ref: "#/components/schemas/AuditRecordData"
+
+    AuditRecordData:
+      type: object
+      description: Data of AuditRecord v1 (KAN-15 §5.1); the CloudEvents subject equals entityId.
+      required:
+        [
+          recordId,
+          recordType,
+          action,
+          actorSub,
+          actorRole,
+          entityType,
+          entityId,
+          outcome,
+          occurredAt,
+        ]
+      properties:
+        recordId:
+          $ref: "#/components/schemas/Uuid"
+        recordType:
+          type: string
+          enum: [ACTION, ACCESS]
+        action:
+          type: string
+          description: |
+            Action code. MS-17 records SIGN_IN, SIGN_IN_FAILED, ACCOUNT_LOCKED, ACCOUNT_ACTIVATED,
+            ACTIVATION_CODE_ISSUED, SESSION_REVOKED and STAFF_AUTHENTICATOR_RESET.
+          pattern: "^[A-Z][A-Z0-9_]*$"
+        actorSub:
+          $ref: "#/components/schemas/Subject"
+        actorRole:
+          type: string
+          description: Role of the actor when the action happened.
+        workstationId:
+          type: string
+          description: Teller window or workstation (optional).
+        entityType:
+          type: string
+        entityId:
+          type: string
+          minLength: 1
+        amountCents:
+          type: integer
+          format: int64
+          description: Amount in US dollar cents (optional; MS-17 never sets it).
+        outcome:
+          type: string
+          enum: [SUCCESS, FAILURE, DENIED]
+        occurredAt:
+          type: string
+          format: date-time
+        retroactive:
+          type: boolean
+          description: True when the record is written after the fact (optional).
+
+    MemberAdmittedEvent:
+      allOf:
+        - $ref: "#/components/schemas/CloudEventEnvelope"
+        - type: object
+          properties:
+            source:
+              const: /services/member-management-service
+            type:
+              const: ec.solidariaplus.membership.MemberAdmitted.v1
+            dataschema:
+              const: urn:solidariaplus:schema:membership:MemberAdmitted:v1
+            data:
+              $ref: "#/components/schemas/MemberAdmittedData"
+
+    MemberAdmittedData:
+      type: object
+      description: Data of MemberAdmitted v1 (KAN-15 D-01 §1.1).
+      required: [memberId, memberNumber, certificateNumber, admissionDate, admittedAt]
+      properties:
+        memberId:
+          $ref: "#/components/schemas/Uuid"
+        memberNumber:
+          type: string
+          description: Short number of the membership card; MS-17 uses it as the sign-in identifier (not personal data, KAN-15 §8).
+          pattern: "^[0-9]{1,10}$"
+        certificateNumber:
+          type: integer
+          minimum: 1
+          description: Number of the contribution certificate.
+        admissionDate:
+          type: string
+          format: date
+          description: Business date of the admission (America/Guayaquil).
+        admittedAt:
+          type: string
+          format: date-time
+
+    MembershipEndedEvent:
+      allOf:
+        - $ref: "#/components/schemas/CloudEventEnvelope"
+        - type: object
+          properties:
+            source:
+              const: /services/member-management-service
+            type:
+              const: ec.solidariaplus.membership.MembershipEnded.v1
+            dataschema:
+              const: urn:solidariaplus:schema:membership:MembershipEnded:v1
+            data:
+              $ref: "#/components/schemas/MembershipEndedData"
+
+    MembershipEndedData:
+      type: object
+      description: Data of MembershipEnded v1 (KAN-15 D-01 §1.1).
+      required: [memberId, endType, endedAt]
+      properties:
+        memberId:
+          $ref: "#/components/schemas/Uuid"
+        endType:
+          type: string
+          enum: [EXCLUDED, WITHDRAWN]
+        assemblyMinutes:
+          type: object
+          description: Minutes of the assembly that decided the exclusion (optional).
+          required: [number, date]
+          properties:
+            number:
+              type: string
+            date:
+              type: string
+              format: date
+        endedAt:
+          type: string
+          format: date-time

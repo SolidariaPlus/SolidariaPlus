@@ -1,0 +1,20 @@
+# Artifacts that Microcks imports from contracts/ (KAN-15 §7), on the workstation (docker compose)
+# and in the pipeline (Microcks Testcontainers module, JUnit 5).
+# One entry per file:
+#   path   file relative to the repository root
+#   main   true = main artifact (defines the API); false = secondary (adds examples to a main one)
+#   mocks  what Microcks serves or publishes from the file
+#   until  optional; the condition that removes a temporary entry
+artifacts:
+  - path: contracts/openapi/identity-access.openapi.yaml
+    main: true
+    mocks: REST mock of MS-17 identity-access-service (OAuth, pages, activation codes, resets, sessions)
+
+  - path: contracts/asyncapi/identity-access.asyncapi.yaml
+    main: true
+    mocks: Kafka mock publishing SessionRevoked on identity-access.events and AuditRecord on audit.records
+
+  - path: contracts/microcks/member-management.mock.asyncapi.yaml
+    main: true
+    mocks: Kafka mock publishing MemberAdmitted and MembershipEnded on member-management.events
+    until: contracts/asyncapi/member-management.asyncapi.yaml exists and MS-01 member-management-service runs in QA
