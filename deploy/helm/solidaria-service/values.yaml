@@ -1,0 +1,132 @@
+# Defaults of the shared chart. Each service sets its own values in
+# services/<context>/<service>/helm/values.yaml and values-<env>.yaml; deploy-qa.yml and
+# promote-prod.yml add image.digest. Layering (later wins):
+#   chart values.yaml < chart values-<env>.yaml < service values.yaml < service values-<env>.yaml < --set
+#
+# A service that is not deployed yet keeps enabled: false, so the chart renders nothing for it.
+enabled: true
+
+# Name of the Deployment, Service and ServiceAccount; defaults to the release name.
+nameOverride: ""
+
+environment: qa # qa | production (label and OTEL resource attribute, principle E-07)
+slot: A1
+awsRegion: "" # set by the deploy workflow (us-west-2 in QA, us-east-1 in Production)
+
+image:
+  repository: registry.invalid/solidaria/service
+  # QA and Production always deploy by digest (KAN-11 section 6.5); tag is for local tests only.
+  digest: ""
+  tag: dev
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+containerPort: 8080
+
+# Plain environment variables. Secrets are read by the service from AWS Secrets Manager and
+# Parameter Store with Spring Cloud AWS and the node role (KAN-2 ADR-112), never from values.
+env: {}
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 384Mi
+  limits:
+    memory: 768Mi
+
+probes:
+  startup:
+    path: /actuator/health/liveness
+    failureThreshold: 30
+    periodSeconds: 5
+  liveness:
+    path: /actuator/health/liveness
+    periodSeconds: 10
+  readiness:
+    path: /actuator/health/readiness
+    periodSeconds: 5
+
+metrics:
+  enabled: true
+  path: /actuator/prometheus
+  interval: 30s
+
+service:
+  type: ClusterIP
+  port: 80
+
+serviceAccount:
+  create: true
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+# ALB through the AWS Load Balancer Controller (KAN-32). One ALB per account: every Ingress of
+# the account joins the same group. Only requests that carry the CloudFront origin header are
+# forwarded (KAN-2 ADR-115).
+ingress:
+  enabled: false
+  className: alb
+  groupName: ""
+  scheme: internal
+  securityGroupId: ""
+  paths: []
+  #  - path: /auth
+  #    pathType: Prefix
+  originVerify:
+    enabled: true
+    headerName: X-Origin-Verify
+    value: ""
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+
+# KEDA on Kafka consumer lag or RabbitMQ queue depth (KAN-2 section 6.3). When enabled it
+# replaces the HPA above.
+keda:
+  enabled: false
+  minReplicaCount: 1
+  maxReplicaCount: 3
+  triggers: []
+  #  - type: kafka
+  #    metadata: { bootstrapServers: ..., consumerGroup: ..., topic: ..., lagThreshold: "50" }
+
+# Scheduled computations run the same image and digest as the service (KAN-11 section 6.6).
+cronJobs: []
+#  - name: daily-interest
+#    schedule: "0 6 * * *"
+#    args: ["--spring.batch.job.name=dailyInterest"]
+
+networkPolicy:
+  enabled: true
+  # Namespaces whose pods may call the service (the ALB reaches the pods by IP from the VPC).
+  allowFromNamespaces: [observability]
+  allowFromCidrs: []
+  extraIngress: []
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+# Flyway migrations as a pre-install and pre-upgrade hook (KAN-11 section 6.6).
+migrations:
+  enabled: false
+  args: ["--spring.main.web-application-type=none", "--spring.flyway.enabled=true"]
+  env: {}
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

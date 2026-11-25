@@ -1,0 +1,43 @@
+{{- if and .Values.enabled .Values.migrations.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-migrate-%d" (include "solidaria.name" .) .Release.Revision | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- include "solidaria.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "solidaria.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: default
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: migrate
+          image: {{ include "solidaria.image" . }}
+          args:
+            {{- toYaml .Values.migrations.args | nindent 12 }}
+          env:
+            {{- include "solidaria.env" . | nindent 12 }}
+            {{- range $name, $value := .Values.migrations.env }}
+            - name: {{ $name }}
+              value: {{ $value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            {{- include "solidaria.tmpVolumeMount" . | nindent 12 }}
+      volumes:
+        {{- include "solidaria.tmpVolume" . | nindent 8 }}
+{{- end }}

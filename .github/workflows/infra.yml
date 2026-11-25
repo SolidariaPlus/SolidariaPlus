@@ -1,26 +1,153 @@
+# Infrastructure pipeline (KAN-34; KAN-11 sections 6.3 and 6.8; KAN-2 ADR-059, ADR-077).
+#
+# Pull requests that touch infra/: format, validation, tflint, Trivy configuration scan and the
+#   QA/Production parity check, on GitHub-hosted runners. Self-hosted runners never run
+#   pull-request jobs, because the repository is public (KAN-11 section 5.4), so the plan of each
+#   account is shown on the push instead (see below).
+# Push to qa: plan and apply to every enabled QA slot, in the order of infra/accounts.yml, each on
+#   the runner of its own account, keeping the current session state of the slot.
+# Push to main: the same for Production, after the professor approved the qa to main pull request.
 name: infra
 
 on:
+  pull_request:
+    branches: [dev, qa, main]
+    paths:
+      - infra/**
+      - .github/workflows/infra.yml
+      - .github/scripts/tf.sh
+      - .github/scripts/accounts.py
   push:
-    branches: [main]
-    paths: ["infra/terraform/**"]
+    branches: [qa, main]
+    paths:
+      - infra/**
+      - .github/workflows/infra.yml
+      - .github/scripts/tf.sh
+      - .github/scripts/accounts.py
   workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write
+
+concurrency:
+  group: infra-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  terraform:
+  static:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        env: [qa, prod]
-    defaults:
-      run:
-        working-directory: infra/terraform/envs/${{ matrix.env }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Terraform plan
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Read Terraform version
+        id: versions
+        run: echo "terraform=$(awk '$1 == "terraform" {print $2}' .tool-versions)" >> "$GITHUB_OUTPUT"
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ steps.versions.outputs.terraform }}
+          terraform_wrapper: false
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: v0.66.0
+      - uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          version: v0.76.2
+          cache: true
+      - name: terraform fmt
+        run: terraform fmt -check -recursive -diff infra/terraform
+      - name: terraform validate and tflint
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          echo "TODO: terraform init / plan for ${{ matrix.env }}"
+          tflint --init --config "$GITHUB_WORKSPACE/.tflint.hcl"
+          mapfile -t dirs < <(find infra/terraform -name '*.tf' -not -path '*/.terraform/*' -printf '%h\n' | sort -u)
+          for dir in "${dirs[@]}"; do
+            echo "::group::$dir"
+            terraform -chdir="$dir" init -backend=false -input=false >/dev/null
+            terraform -chdir="$dir" validate
+            tflint --chdir="$dir" --config "$GITHUB_WORKSPACE/.tflint.hcl"
+            echo "::endgroup::"
+          done
+      - name: Trivy configuration scan
+        env:
+          TRIVY_DB_REPOSITORY: public.ecr.aws/aquasecurity/trivy-db:2
+        run: trivy config --severity HIGH,CRITICAL --exit-code 1 infra
+      - name: QA and Production differ only in values (principle E-03)
+        run: |
+          status=0
+          for qa_root in infra/terraform/envs/qa/*/; do
+            root=$(basename "$qa_root")
+            prod_root="infra/terraform/envs/prod/$root"
+            [ -d "$prod_root" ] || { echo "::error::$prod_root is missing"; status=1; continue; }
+            if ! diff -r --exclude='*.tfvars' --exclude='.terraform*' "$qa_root" "$prod_root"; then
+              echo "::error::envs/qa/$root and envs/prod/$root differ outside terraform.tfvars"
+              status=1
+            fi
+          done
+          exit $status
+
+  matrix:
+    if: github.event_name != 'pull_request'
+    needs: static
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.matrix.outputs.environment }}
+      slots: ${{ steps.matrix.outputs.slots }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: matrix
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          case "$REF" in
+            qa) env=qa ;;
+            main) env=prod ;;
+            *) echo "::error::infra.yml applies only from qa or main"; exit 1 ;;
+          esac
+          echo "environment=$env" >> "$GITHUB_OUTPUT"
+          echo "slots=$(python3 .github/scripts/accounts.py slots "$env")" >> "$GITHUB_OUTPUT"
+
+  apply:
+    needs: matrix
+    strategy:
+      # One account at a time, in the apply order of infra/accounts.yml.
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        target: ${{ fromJSON(needs.matrix.outputs.slots) }}
+    runs-on: [self-hosted, "${{ matrix.target.runner }}"]
+    environment: ${{ matrix.target.github_environment }}
+    env:
+      ENVIRONMENT: ${{ matrix.target.environment }}
+      SLOT: ${{ matrix.target.slot }}
+      SLOT_LOWER: ${{ matrix.target.slot_lower }}
+      # Repository variable (Settings > Secrets and variables > Actions > Variables); not committed.
+      TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/assert-account
+        with:
+          environment: ${{ matrix.target.environment }}
+          slot: ${{ matrix.target.slot }}
+      - name: Current session state
+        id: session
+        run: |
+          state=$(aws ssm get-parameter --name "/solidaria/$ENVIRONMENT/$SLOT_LOWER/session/state" \
+            --query Parameter.Value --output text 2>/dev/null || echo off)
+          echo "Session of $ENVIRONMENT-$SLOT is $state"
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+      - name: Promotion pull permission (QA registries only, ADR-119)
+        if: matrix.target.environment == 'qa'
+        run: |
+          prod_account=$(python3 .github/scripts/accounts.py account-id prod "$SLOT")
+          if [ -n "$prod_account" ]; then
+            echo "TF_VAR_promotion_pull_account_ids=[\"$prod_account\"]" >> "$GITHUB_ENV"
+          else
+            echo "::warning::account_id of prod $SLOT is empty in infra/accounts.yml: promote-prod.yml cannot copy images yet"
+          fi
+      - name: Terraform plan
+        run: .github/scripts/tf.sh "$ENVIRONMENT" "$SLOT" infra plan -var "session=${{ steps.session.outputs.state }}" -out=tfplan
+      - name: Terraform apply
+        run: terraform -chdir="infra/terraform/envs/$ENVIRONMENT/$SLOT_LOWER" apply -auto-approve tfplan
+      - name: Kubernetes side (only during a session)
+        if: steps.session.outputs.state == 'on'
+        run: .github/scripts/tf.sh "$ENVIRONMENT" "$SLOT" platform apply

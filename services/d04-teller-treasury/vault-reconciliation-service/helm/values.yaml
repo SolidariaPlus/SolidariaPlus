@@ -1,0 +1,5 @@
+# Helm values of vault-reconciliation-service for the shared chart deploy/helm/solidaria-service (KAN-33).
+# The service is not deployed yet: enabled stays false until its first release.
+enabled: false
+nameOverride: vault-reconciliation-service
+containerPort: 8089

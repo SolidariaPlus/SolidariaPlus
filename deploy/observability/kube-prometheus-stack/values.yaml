@@ -1,0 +1,74 @@
+# kube-prometheus-stack in the cluster of A1: the central Prometheus, Alertmanager and Grafana of
+# the environment (KAN-33; KAN-2 section 6.7, ADR-058, ADR-107). modules/platform-addons adds the
+# environment-specific values: external label "environment", the SNS topic, the dashboards and
+# the rules of deploy/observability, and the Grafana admin secret.
+fullnameOverride: monitoring
+
+crds:
+  enabled: true
+
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    # Discover every ServiceMonitor and PrometheusRule of the cluster, not only those of this release.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+  config:
+    route:
+      receiver: sns
+      group_by: [alertname, service]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      routes:
+        - receiver: "null"
+          matchers: ['alertname = "Watchdog"']
+    receivers:
+      - name: "null"
+      - name: sns
+        sns_configs:
+          # topic_arn and sigv4.region are set by modules/platform-addons
+          - send_resolved: true
+            subject: "[{{ .CommonLabels.environment | toUpper }}] {{ .CommonLabels.alertname }}"
+            message: |-
+              {{ range .Alerts }}{{ .Annotations.summary }}
+              {{ .Annotations.description }}
+              {{ end }}
+
+grafana:
+  defaultDashboardsTimezone: browser
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+    # Same datasource uid as on localhost, so the dashboards of deploy/observability work unchanged.
+    datasources:
+      enabled: true
+      defaultDatasourceEnabled: true
+      uid: prometheus
+
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false

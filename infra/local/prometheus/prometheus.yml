@@ -1,0 +1,30 @@
+# Local Prometheus: scrapes itself, RabbitMQ and the services started on the workstation
+# (./gradlew :<service>:bootRun). In QA and Production the kube-prometheus-stack scrapes
+# the same /actuator/prometheus endpoints through ServiceMonitors (deploy/helm, KAN-33).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: local
+
+rule_files:
+  - /etc/prometheus/rules/*.yaml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: rabbitmq
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+
+  - job_name: spring-boot
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["host.docker.internal:8097"]
+        labels:
+          service: identity-access-service
+      - targets: ["host.docker.internal:8081"]
+        labels:
+          service: member-management-service

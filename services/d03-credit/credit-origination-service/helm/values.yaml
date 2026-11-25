@@ -1,0 +1,5 @@
+# Helm values of credit-origination-service for the shared chart deploy/helm/solidaria-service (KAN-33).
+# The service is not deployed yet: enabled stays false until its first release.
+enabled: false
+nameOverride: credit-origination-service
+containerPort: 8085

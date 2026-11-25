@@ -1,0 +1,10 @@
+apiVersion: v2
+name: solidaria-service
+description: >-
+  Shared deployment chart of every Solidaria+ microservice on Amazon EKS in QA and Production
+  (KAN-33; KAN-11 section 6.6; KAN-2 ADR-112, ADR-113).
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.33.0-0"
+home: https://github.com/SolidariaPlus/SolidariaPlus

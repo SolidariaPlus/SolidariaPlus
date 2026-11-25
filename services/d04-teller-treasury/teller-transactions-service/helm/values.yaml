@@ -1,0 +1,5 @@
+# Helm values of teller-transactions-service for the shared chart deploy/helm/solidaria-service (KAN-33).
+# The service is not deployed yet: enabled stays false until its first release.
+enabled: false
+nameOverride: teller-transactions-service
+containerPort: 8088

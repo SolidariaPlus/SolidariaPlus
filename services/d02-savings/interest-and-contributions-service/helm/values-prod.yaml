@@ -1,0 +1,2 @@
+# interest-and-contributions-service in PROD: environment-specific values only (principle E-03).
+environment: production

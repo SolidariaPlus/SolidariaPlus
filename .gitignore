@@ -53,10 +53,14 @@ coverage/
 
 # Terraform
 .terraform/
+.terraform-*/
 *.tfstate
 *.tfstate.*
+*.tfplan
 *.tfvars
 !*.tfvars.example
+# Environment values are versioned (principle E-03) and never hold secrets
+!infra/terraform/**/*.tfvars
 crash.log
 
 # React Native / Electron

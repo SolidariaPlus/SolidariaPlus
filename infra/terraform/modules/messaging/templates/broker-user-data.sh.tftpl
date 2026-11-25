@@ -1,0 +1,40 @@
+#!/bin/bash
+set -euo pipefail
+exec > >(tee -a /var/log/solidaria-broker-setup.log) 2>&1
+
+dnf -y install docker openssl
+systemctl enable --now docker
+
+install -d -m 0755 /etc/solidaria /opt/solidaria
+cat > /etc/solidaria/broker.env <<'EOF'
+ENVIRONMENT=${environment}
+AWS_REGION=${region}
+ARTIFACT_BUCKET=${artifact_bucket}
+KAFKA_IMAGE=${kafka_image}
+RABBITMQ_IMAGE=${rabbitmq_image}
+RABBITMQ_JWKS_URL=${jwks_url}
+EOF
+
+cat > /etc/systemd/system/solidaria-broker.service <<'EOF'
+[Unit]
+Description=Solidaria+ Kafka and RabbitMQ broker (KAN-2 ADR-122)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/usr/bin/bash -c 'source /etc/solidaria/broker.env && aws s3 cp --region "$AWS_REGION" "s3://$ARTIFACT_BUCKET/messaging/scripts/broker-start.sh" /opt/solidaria/broker-start.sh'
+ExecStart=/usr/bin/bash /opt/solidaria/broker-start.sh
+ExecStop=/usr/bin/docker stop -t 60 kafka rabbitmq
+TimeoutStartSec=1500
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable solidaria-broker.service
+systemctl start --no-block solidaria-broker.service

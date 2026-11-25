@@ -1,0 +1,34 @@
+# Alert rules shared by every environment, in plain Prometheus rule-file format.
+# Localhost loads this file directly (infra/local/prometheus); QA and Production load it into
+# the kube-prometheus-stack through additionalPrometheusRulesMap (modules/observability, KAN-33).
+# Every alert carries the environment through the external label "environment" (KAN-2 ADR-121).
+groups:
+  - name: solidaria-services
+    rules:
+      - alert: ServiceDown
+        expr: up{service!=""} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.service }} is down"
+          description: "Prometheus cannot scrape {{ $labels.service }} ({{ $labels.instance }}) for 2 minutes."
+      - alert: HighHttpErrorRate
+        expr: |
+          sum by (service) (rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+            / sum by (service) (rate(http_server_requests_seconds_count[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} returns more than 5 % of 5xx responses"
+          description: "The 5xx ratio of {{ $labels.service }} has been above 5 % for 5 minutes."
+      - alert: HighHttpLatencyP95
+        expr: |
+          histogram_quantile(0.95, sum by (service, le) (rate(http_server_requests_seconds_bucket[5m]))) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} p95 latency above 800 ms"
+          description: "The p95 HTTP latency of {{ $labels.service }} has been above 800 ms for 10 minutes."

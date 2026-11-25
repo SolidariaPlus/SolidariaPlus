@@ -1,0 +1,107 @@
+{
+  "vhosts": [{ "name": "solidaria" }],
+  "permissions": [
+    {
+      "user": "admin",
+      "vhost": "solidaria",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "solidaria.commands",
+      "vhost": "solidaria",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "solidaria.jobs",
+      "vhost": "solidaria",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "solidaria.wait",
+      "vhost": "solidaria",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "solidaria.dlx",
+      "vhost": "solidaria",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "smart-kyc-onboarding.kyc-processing",
+      "vhost": "solidaria",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "classic",
+        "x-dead-letter-exchange": "solidaria.dlx",
+        "x-dead-letter-routing-key": "smart-kyc-onboarding.kyc-processing"
+      }
+    },
+    {
+      "name": "smart-kyc-onboarding.kyc-processing.wait",
+      "vhost": "solidaria",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "classic",
+        "x-dead-letter-exchange": "solidaria.jobs",
+        "x-dead-letter-routing-key": "smart-kyc-onboarding.kyc-processing"
+      }
+    },
+    {
+      "name": "smart-kyc-onboarding.kyc-processing.dlq",
+      "vhost": "solidaria",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": { "x-queue-type": "classic" }
+    }
+  ],
+  "bindings": [
+    {
+      "source": "solidaria.jobs",
+      "vhost": "solidaria",
+      "destination": "smart-kyc-onboarding.kyc-processing",
+      "destination_type": "queue",
+      "routing_key": "smart-kyc-onboarding.kyc-processing",
+      "arguments": {}
+    },
+    {
+      "source": "solidaria.wait",
+      "vhost": "solidaria",
+      "destination": "smart-kyc-onboarding.kyc-processing.wait",
+      "destination_type": "queue",
+      "routing_key": "smart-kyc-onboarding.kyc-processing",
+      "arguments": {}
+    },
+    {
+      "source": "solidaria.dlx",
+      "vhost": "solidaria",
+      "destination": "smart-kyc-onboarding.kyc-processing.dlq",
+      "destination_type": "queue",
+      "routing_key": "smart-kyc-onboarding.kyc-processing",
+      "arguments": {}
+    }
+  ]
+}

@@ -1,0 +1,131 @@
+# Service-to-account map of each environment (KAN-2 section 6.2.1, ADR-076; KAN-11 section 5.3).
+# The pipelines read this file; no account is hard-coded in a workflow.
+#
+# - Each slot is one AWS Academy Learner Lab account. QA and Production use the same slots,
+#   each in its own five accounts.
+# - apply_order is the order in which infra.yml and session.yml apply the slots: A1 first,
+#   because MS-17, the broker instance and the directory live there.
+# - enabled: false keeps a slot out of every pipeline until its services start (KAN-21 scope:
+#   slot A1 only).
+# - runner is the label of the self-hosted runner of the account (infra/terraform/bootstrap).
+#   Jobs run on [self-hosted, <runner>] and first check the account with
+#   `aws sts get-caller-identity` (.github/actions/assert-account).
+# - account_id is optional. When set, assert-account also checks the account number; account
+#   numbers of Learner Lab accounts are not secrets, but they change when an account is replaced.
+
+apply_order: [A1, A2, A3, A4, A5]
+
+environments:
+  qa:
+    region: us-west-2
+    github_environment: qa
+    branch: qa
+    slots:
+      A1:
+        enabled: true
+        runner: qa-A1
+        account_id: ""
+        vpc_cidr: 10.10.0.0/16
+        contents: platform, D-01 membership, D-07 identity
+        services:
+          [
+            sample-service,
+            member-management-service,
+            smart-kyc-onboarding-service,
+            identity-access-service,
+          ]
+      A2:
+        enabled: false
+        runner: qa-A2
+        account_id: ""
+        vpc_cidr: 10.11.0.0/16
+        contents: D-02 savings, D-04 teller and treasury
+        services:
+          [
+            core-savings-service,
+            interest-and-contributions-service,
+            teller-transactions-service,
+            vault-reconciliation-service,
+            cash-liquidity-forecast-service,
+          ]
+      A3:
+        enabled: false
+        runner: qa-A3
+        account_id: ""
+        vpc_cidr: 10.12.0.0/16
+        contents: D-03 credit
+        services:
+          [credit-origination-service, ml-credit-scoring-service, portfolio-recovery-service]
+      A4:
+        enabled: false
+        runner: qa-A4
+        account_id: ""
+        vpc_cidr: 10.13.0.0/16
+        contents: D-05 accounting, n8n
+        services:
+          [general-ledger-service, smart-accounting-rules-service, financial-reporting-service]
+      A5:
+        enabled: false
+        runner: qa-A5
+        account_id: ""
+        vpc_cidr: 10.14.0.0/16
+        contents: D-06 AML, audit and supervision
+        services:
+          [ml-fraud-aml-service, immutable-audit-ledger-service, regulatory-supervision-service]
+
+  prod:
+    region: us-east-1
+    github_environment: production
+    branch: main
+    slots:
+      A1:
+        enabled: true
+        runner: prod-A1
+        account_id: ""
+        vpc_cidr: 10.20.0.0/16
+        contents: platform, D-01 membership, D-07 identity
+        services:
+          [
+            sample-service,
+            member-management-service,
+            smart-kyc-onboarding-service,
+            identity-access-service,
+          ]
+      A2:
+        enabled: false
+        runner: prod-A2
+        account_id: ""
+        vpc_cidr: 10.21.0.0/16
+        contents: D-02 savings, D-04 teller and treasury
+        services:
+          [
+            core-savings-service,
+            interest-and-contributions-service,
+            teller-transactions-service,
+            vault-reconciliation-service,
+            cash-liquidity-forecast-service,
+          ]
+      A3:
+        enabled: false
+        runner: prod-A3
+        account_id: ""
+        vpc_cidr: 10.22.0.0/16
+        contents: D-03 credit
+        services:
+          [credit-origination-service, ml-credit-scoring-service, portfolio-recovery-service]
+      A4:
+        enabled: false
+        runner: prod-A4
+        account_id: ""
+        vpc_cidr: 10.23.0.0/16
+        contents: D-05 accounting, n8n
+        services:
+          [general-ledger-service, smart-accounting-rules-service, financial-reporting-service]
+      A5:
+        enabled: false
+        runner: prod-A5
+        account_id: ""
+        vpc_cidr: 10.24.0.0/16
+        contents: D-06 AML, audit and supervision
+        services:
+          [ml-fraud-aml-service, immutable-audit-ledger-service, regulatory-supervision-service]
