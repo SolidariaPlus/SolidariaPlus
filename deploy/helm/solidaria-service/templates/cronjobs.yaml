@@ -1,0 +1,46 @@
+{{- if .Values.enabled }}
+{{- range .Values.cronJobs }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ printf "%s-%s" (include "solidaria.name" $) .name | trunc 52 | trimSuffix "-" }}
+  labels:
+    {{- include "solidaria.labels" $ | nindent 4 }}
+spec:
+  schedule: {{ .schedule | quote }}
+  timeZone: {{ .timeZone | default "America/Guayaquil" | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .backoffLimit | default 2 }}
+      template:
+        metadata:
+          labels:
+            {{- include "solidaria.labels" $ | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "solidaria.serviceAccountName" $ }}
+          securityContext:
+            {{- toYaml $.Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: job
+              image: {{ include "solidaria.image" $ }}
+              {{- with .args }}
+              args:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              env:
+                {{- include "solidaria.env" $ | nindent 16 }}
+              resources:
+                {{- toYaml $.Values.resources | nindent 16 }}
+              securityContext:
+                {{- toYaml $.Values.securityContext | nindent 16 }}
+              volumeMounts:
+                {{- include "solidaria.tmpVolumeMount" $ | nindent 16 }}
+          volumes:
+            {{- include "solidaria.tmpVolume" $ | nindent 12 }}
+{{- end }}
+{{- end }}

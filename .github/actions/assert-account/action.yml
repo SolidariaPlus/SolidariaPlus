@@ -1,0 +1,56 @@
+name: Assert AWS account
+description: >-
+  First step of every job on a self-hosted runner (KAN-11 section 5.4). Prints the caller identity
+  and stops with a clear message unless the runner is the one of the expected environment and slot:
+  its instance tags (set by infra/terraform/bootstrap), its region and, when infra/accounts.yml
+  records it, the account id.
+inputs:
+  environment:
+    description: qa or prod
+    required: true
+  slot:
+    description: A1 to A5
+    required: true
+outputs:
+  account-id:
+    description: Account of the runner
+    value: ${{ steps.check.outputs.account-id }}
+  region:
+    description: Region of the environment
+    value: ${{ steps.check.outputs.region }}
+runs:
+  using: composite
+  steps:
+    - id: check
+      shell: bash
+      env:
+        EXPECTED_ENV: ${{ inputs.environment }}
+        EXPECTED_SLOT: ${{ inputs.slot }}
+      run: |
+        set -euo pipefail
+        region=$(python3 .github/scripts/accounts.py region "$EXPECTED_ENV")
+        expected_account=$(python3 .github/scripts/accounts.py account-id "$EXPECTED_ENV" "$EXPECTED_SLOT")
+        identity=$(aws sts get-caller-identity --output json)
+        echo "$identity"
+        account=$(echo "$identity" | jq -r .Account)
+
+        token=$(curl -fsS -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')
+        instance=$(curl -fsS -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/meta-data/instance-id)
+        instance_region=$(curl -fsS -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/meta-data/placement/region)
+        tags=$(aws ec2 describe-tags --region "$instance_region" --filters "Name=resource-id,Values=$instance" --output json)
+        tag_env=$(echo "$tags" | jq -r '.Tags[] | select(.Key=="environment") | .Value')
+        tag_slot=$(echo "$tags" | jq -r '.Tags[] | select(.Key=="slot") | .Value')
+        want_env=$([ "$EXPECTED_ENV" = "prod" ] && echo production || echo qa)
+
+        fail() { echo "::error::$1"; exit 1; }
+        [ "$instance_region" = "$region" ] || fail "Runner is in $instance_region, expected $region for $EXPECTED_ENV"
+        [ "$tag_env" = "$want_env" ] || fail "Runner belongs to environment '$tag_env', expected '$want_env'"
+        [ "$tag_slot" = "$EXPECTED_SLOT" ] || fail "Runner belongs to slot '$tag_slot', expected '$EXPECTED_SLOT'"
+        if [ -n "$expected_account" ] && [ "$account" != "$expected_account" ]; then
+          fail "Account $account is not the $EXPECTED_ENV-$EXPECTED_SLOT account $expected_account of infra/accounts.yml"
+        fi
+        echo "Confirmed: account $account is $want_env-$EXPECTED_SLOT in $region"
+        echo "account-id=$account" >> "$GITHUB_OUTPUT"
+        echo "region=$region" >> "$GITHUB_OUTPUT"
+        echo "AWS_REGION=$region" >> "$GITHUB_ENV"
+        echo "AWS_DEFAULT_REGION=$region" >> "$GITHUB_ENV"

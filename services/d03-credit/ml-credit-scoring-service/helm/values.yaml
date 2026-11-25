@@ -1,0 +1,5 @@
+# Helm values of ml-credit-scoring-service for the shared chart deploy/helm/solidaria-service (KAN-33).
+# The service is not deployed yet: enabled stays false until its first release.
+enabled: false
+nameOverride: ml-credit-scoring-service
+containerPort: 8086

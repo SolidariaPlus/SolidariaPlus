@@ -1,0 +1,244 @@
+name: solidaria-plus
+
+x-images:
+  kafka: &kafka-image apache/kafka:4.1.0
+  rabbitmq: &rabbitmq-image rabbitmq:4.1.4-management-alpine
+  postgres: &postgres-image postgres:17.6-alpine
+
+x-provisioner: &provisioner
+  init: true
+  restart: "no"
+  healthcheck:
+    test: ["CMD", "test", "-f", "/tmp/provisioned"]
+    interval: 5s
+    timeout: 3s
+    retries: 60
+    start_period: 120s
+
+services:
+  postgres:
+    image: *postgres-image
+    profiles: [identity]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-local-postgres-admin}
+    ports: ["5432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  postgres-provisioner:
+    <<: *provisioner
+    image: *postgres-image
+    profiles: [identity]
+    entrypoint: ["sh", "-c", "sh /opt/solidaria/provision.sh && exec tail -f /dev/null"]
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGPASSWORD: ${POSTGRES_ADMIN_PASSWORD:-local-postgres-admin}
+      SERVICE_DB_PASSWORD: ${SERVICE_DB_PASSWORD:-local-service-db}
+    volumes:
+      - ./infra/local/postgres/provision.sh:/opt/solidaria/provision.sh:ro
+      - ./infra/local/services.conf:/opt/solidaria/services.conf:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  valkey:
+    image: valkey/valkey:8.1.3-alpine
+    profiles: [identity]
+    entrypoint: ["sh", "/opt/solidaria/start-valkey.sh"]
+    environment:
+      VALKEY_ADMIN_PASSWORD: ${VALKEY_ADMIN_PASSWORD:-local-valkey-admin}
+      SERVICE_CACHE_PASSWORD: ${SERVICE_CACHE_PASSWORD:-local-service-cache}
+    ports: ["6379:6379"]
+    volumes:
+      - valkey-data:/data
+      - ./infra/local/valkey/start-valkey.sh:/opt/solidaria/start-valkey.sh:ro
+      - ./infra/local/services.conf:/opt/solidaria/services.conf:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'valkey-cli --no-auth-warning -a "$$VALKEY_ADMIN_PASSWORD" ping | grep -q PONG',
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  kafka:
+    image: *kafka-image
+    profiles: [identity]
+    entrypoint: ["bash", "/opt/solidaria/messaging/kafka/start-kafka.sh"]
+    environment:
+      KAFKA_ADMIN_PASSWORD: ${KAFKA_ADMIN_PASSWORD:-local-kafka-admin}
+      KAFKA_INTERNAL_ADVERTISED: kafka:9092
+      KAFKA_EXTERNAL_ADVERTISED: localhost:9094
+      KAFKA_CLIENT_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_HEAP_OPTS: -Xms512m -Xmx512m
+    ports: ["9094:9094"]
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+      - ./infra/messaging:/opt/solidaria/messaging:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:9091 >/dev/null 2>&1",
+        ]
+      interval: 10s
+      timeout: 15s
+      retries: 30
+      start_period: 30s
+
+  kafka-provisioner:
+    <<: *provisioner
+    image: *kafka-image
+    profiles: [identity]
+    entrypoint:
+      [
+        "bash",
+        "-c",
+        "bash /opt/solidaria/messaging/scripts/provision-kafka.sh && touch /tmp/provisioned && exec tail -f /dev/null",
+      ]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:9092
+      KAFKA_ADMIN_PASSWORD: ${KAFKA_ADMIN_PASSWORD:-local-kafka-admin}
+      KAFKA_CLIENT_PROTOCOL: SASL_PLAINTEXT
+      KAFKA_PASSWORD_SOURCE: env
+      KAFKA_SERVICE_PASSWORD: ${KAFKA_SERVICE_PASSWORD:-local-kafka-service}
+      DEFINITIONS_DIR: /opt/solidaria/messaging/kafka
+      KAFKA_HEAP_OPTS: -Xmx256m
+    volumes:
+      - ./infra/messaging:/opt/solidaria/messaging:ro
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  rabbitmq:
+    image: *rabbitmq-image
+    profiles: [identity]
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_ADMIN_PASSWORD:-local-rabbitmq-admin}
+      RABBITMQ_DEFAULT_VHOST: solidaria
+    ports: ["5672:5672", "15672:15672"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./infra/messaging/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ./infra/messaging/rabbitmq/conf.d/20-solidaria.conf:/etc/rabbitmq/conf.d/20-solidaria.conf:ro
+      - ./infra/local/rabbitmq/30-local-oauth.conf:/etc/rabbitmq/conf.d/30-local-oauth.conf:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+
+  rabbitmq-provisioner:
+    <<: *provisioner
+    image: curlimages/curl:8.16.0
+    profiles: [identity]
+    entrypoint:
+      [
+        "sh",
+        "-c",
+        "sh /opt/solidaria/messaging/scripts/provision-rabbitmq.sh && touch /tmp/provisioned && exec tail -f /dev/null",
+      ]
+    environment:
+      RABBITMQ_API: http://rabbitmq:15672
+      RABBITMQ_ADMIN_USER: admin
+      RABBITMQ_ADMIN_PASSWORD: ${RABBITMQ_ADMIN_PASSWORD:-local-rabbitmq-admin}
+      DEFINITIONS_FILE: /opt/solidaria/messaging/rabbitmq/definitions.json
+    volumes:
+      - ./infra/messaging:/opt/solidaria/messaging:ro
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  localstack:
+    image: localstack/localstack:4.9
+    profiles: [identity]
+    environment:
+      SERVICES: s3,dynamodb,lambda,secretsmanager,ssm
+      AWS_DEFAULT_REGION: us-west-2
+      SERVICE_DB_PASSWORD: ${SERVICE_DB_PASSWORD:-local-service-db}
+      SERVICE_CACHE_PASSWORD: ${SERVICE_CACHE_PASSWORD:-local-service-cache}
+      KAFKA_SERVICE_PASSWORD: ${KAFKA_SERVICE_PASSWORD:-local-kafka-service}
+    ports: ["4566:4566"]
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./infra/local/localstack/init.sh:/etc/localstack/init/ready.d/10-solidaria.sh:ro
+      - ./infra/local/services.conf:/opt/solidaria/services.conf:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'curl -fsS http://localhost:4566/_localstack/init/ready | grep -Eq ''"completed": ?true''',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+
+  prometheus:
+    image: prom/prometheus:v3.6.0
+    profiles: [identity, observability]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    ports: ["9090:9090"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - prometheus-data:/prometheus
+      - ./infra/local/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/observability/alerts:/etc/prometheus/rules:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  grafana:
+    image: grafana/grafana:12.2.0
+    profiles: [identity, observability]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-local-grafana-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    ports: ["3000:3000"]
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./infra/local/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/observability/dashboards:/var/lib/grafana/dashboards:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  valkey-data:
+  kafka-data:
+  rabbitmq-data:
+  localstack-data:
+  prometheus-data:
+  grafana-data:

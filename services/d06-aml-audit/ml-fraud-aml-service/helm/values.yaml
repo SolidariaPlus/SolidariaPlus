@@ -1,0 +1,5 @@
+# Helm values of ml-fraud-aml-service for the shared chart deploy/helm/solidaria-service (KAN-33).
+# The service is not deployed yet: enabled stays false until its first release.
+enabled: false
+nameOverride: ml-fraud-aml-service
+containerPort: 8094

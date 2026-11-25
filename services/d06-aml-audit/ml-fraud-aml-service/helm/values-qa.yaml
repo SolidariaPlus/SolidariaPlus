@@ -1,0 +1,2 @@
+# ml-fraud-aml-service in QA: environment-specific values only (principle E-03).
+environment: qa

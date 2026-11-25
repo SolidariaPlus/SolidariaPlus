@@ -1,30 +1,122 @@
 name: promote-prod
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
-      ref:
-        description: "Tag or SHA already validated in QA"
+      qa_commit:
+        description: "qa commit to promote again (rollback or re-run); its tree must equal main"
         required: true
 
 permissions:
   contents: read
+  actions: read
   deployments: write
-  id-token: write
 
 concurrency:
   group: promote-prod
   cancel-in-progress: false
 
 jobs:
-  promote-prod:
+  verify:
     runs-on: ubuntu-latest
-    # Environment "production" (with required reviewers) -> Jira "production" (rule AR-03)
-    environment: production
+    outputs:
+      qa_commit: ${{ steps.commit.outputs.qa_commit }}
+      services: ${{ steps.manifest.outputs.services }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.ref }}
-      - name: Promote to Production
+          fetch-depth: 0
+      - id: commit
+        env:
+          INPUT: ${{ inputs.qa_commit }}
         run: |
-          echo "TODO: promote the images validated in QA to the production AWS account"
+          if [ -n "$INPUT" ]; then
+            qa_commit="$INPUT"
+          elif git rev-parse -q --verify HEAD^2 >/dev/null; then
+            qa_commit=$(git rev-parse HEAD^2)
+          else
+            echo "::error::HEAD of main is not a merge of qa: Production only changes through the qa to main pull request"
+            exit 1
+          fi
+          git merge-base --is-ancestor "$qa_commit" origin/qa || { echo "::error::$qa_commit is not on qa"; exit 1; }
+          if ! git diff --quiet "$qa_commit" HEAD; then
+            echo "::error::The tree of main differs from the tested qa commit $qa_commit"
+            git diff --stat "$qa_commit" HEAD
+            exit 1
+          fi
+          echo "Tree of main equals qa commit $qa_commit"
+          echo "qa_commit=$qa_commit" >> "$GITHUB_OUTPUT"
+      - id: manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QA_COMMIT: ${{ steps.commit.outputs.qa_commit }}
+        run: |
+          run_id=$(gh api "repos/${{ github.repository }}/actions/workflows/deploy-qa.yml/runs?head_sha=$QA_COMMIT&status=success" \
+            --jq '.workflow_runs[0].id // empty')
+          [ -n "$run_id" ] || { echo "::error::deploy-qa.yml has no successful run for $QA_COMMIT: it was not tested in QA"; exit 1; }
+          gh run download "$run_id" --repo "${{ github.repository }}" --name release-manifest --dir manifest
+          jq . manifest/release-manifest.json
+          services=$(jq -c '[.services[] | . + {slot_lower: (.slot | ascii_downcase), runner: ("prod-" + .slot)}]' manifest/release-manifest.json)
+          echo "services=$services" >> "$GITHUB_OUTPUT"
+
+  promote:
+    needs: verify
+    if: needs.verify.outputs.services != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.verify.outputs.services) }}
+    runs-on: [self-hosted, "${{ matrix.service.runner }}"]
+    environment: production
+    env:
+      SERVICE: ${{ matrix.service.name }}
+      SLOT: ${{ matrix.service.slot }}
+      SLOT_LOWER: ${{ matrix.service.slot_lower }}
+      DIGEST: ${{ matrix.service.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/assert-account
+        id: account
+        with:
+          environment: prod
+          slot: ${{ matrix.service.slot }}
+      - name: The session is on
+        run: |
+          state=$(aws ssm get-parameter --name "/solidaria/prod/$SLOT_LOWER/session/state" --query Parameter.Value --output text 2>/dev/null || echo off)
+          [ "$state" = "on" ] || { echo "::error::The Production session of $SLOT is off. Run session.yml (production, start) and re-run this job."; exit 1; }
+      - name: Copy the tested image by digest (ADR-119)
+        env:
+          PROD_ACCOUNT: ${{ steps.account.outputs.account-id }}
+        run: |
+          set -euo pipefail
+          qa_account=$(python3 .github/scripts/accounts.py account-id qa "$SLOT")
+          [ -n "$qa_account" ] || { echo "::error::Set account_id of qa $SLOT in infra/accounts.yml"; exit 1; }
+          qa_region=$(python3 .github/scripts/accounts.py region qa)
+          qa_registry="$qa_account.dkr.ecr.$qa_region.amazonaws.com"
+          prod_registry="$PROD_ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com"
+          # The authorization token of the Production LabRole is valid for the QA registry, whose
+          # repository policy grants pull to this account.
+          qa_token=$(aws ecr get-login-password --region "$qa_region")
+          prod_token=$(aws ecr get-login-password --region "$AWS_REGION")
+          tag=$(aws ecr describe-images --region "$qa_region" --registry-id "$qa_account" --repository-name "$SERVICE" \
+            --image-ids "imageDigest=$DIGEST" --query 'imageDetails[0].imageTags[0]' --output text)
+          if aws ecr describe-images --repository-name "$SERVICE" --image-ids "imageDigest=$DIGEST" >/dev/null 2>&1; then
+            echo "$SERVICE@$DIGEST is already in the Production registry"
+          else
+            skopeo copy --preserve-digests \
+              --src-creds "AWS:$qa_token" --dest-creds "AWS:$prod_token" \
+              "docker://$qa_registry/$SERVICE@$DIGEST" "docker://$prod_registry/$SERVICE:$tag"
+          fi
+          copied=$(skopeo inspect --creds "AWS:$prod_token" --format '{{.Digest}}' "docker://$prod_registry/$SERVICE@$DIGEST")
+          [ "$copied" = "$DIGEST" ] || { echo "::error::Digest mismatch: $copied != $DIGEST"; exit 1; }
+          echo "Same digest in QA and Production: $DIGEST ($tag)"
+      - uses: ./.github/actions/kube-auth
+        with:
+          environment: prod
+          slot: ${{ matrix.service.slot }}
+      - name: Deploy by digest
+        run: .github/scripts/helm-deploy.sh prod "$SLOT" "$SERVICE" "$DIGEST"
+      - name: Smoke tests
+        run: .github/scripts/smoke.sh prod "$SERVICE"

@@ -1,0 +1,49 @@
+name: Kubernetes access
+description: >-
+  Writes a kubeconfig for the private endpoint of the cluster of the slot, authenticated with the
+  ci-deployer ServiceAccount token that session-start stored in Parameter Store (KAN-2 ADR-123).
+  LabRole cannot be used: Amazon EKS maps it to system:node.
+inputs:
+  environment:
+    description: qa or prod
+    required: true
+  slot:
+    description: A1 to A5
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+        SLOT: ${{ inputs.slot }}
+      run: |
+        set -euo pipefail
+        dir="/solidaria/${ENVIRONMENT}/$(echo "$SLOT" | tr '[:upper:]' '[:lower:]')/eks"
+        get() { aws ssm get-parameter --name "$dir/$1" --with-decryption --query Parameter.Value --output text; }
+        endpoint=$(get endpoint) || { echo "::error::No EKS endpoint in $dir: is the session on? Run session.yml with action=start"; exit 1; }
+        kubeconfig="$RUNNER_TEMP/kubeconfig"
+        token=$(get ci-deployer-token)
+        echo "::add-mask::$token"
+        cat > "$kubeconfig" <<EOF
+        apiVersion: v1
+        kind: Config
+        clusters:
+          - name: cluster
+            cluster:
+              server: ${endpoint}
+              certificate-authority-data: $(get ca)
+        users:
+          - name: ci-deployer
+            user:
+              token: ${token}
+        contexts:
+          - name: ${ENVIRONMENT}-${SLOT}
+            context:
+              cluster: cluster
+              user: ci-deployer
+        current-context: ${ENVIRONMENT}-${SLOT}
+        EOF
+        chmod 600 "$kubeconfig"
+        echo "KUBECONFIG=$kubeconfig" >> "$GITHUB_ENV"
+        KUBECONFIG="$kubeconfig" kubectl version --output=yaml | grep -E 'gitVersion' | tail -1

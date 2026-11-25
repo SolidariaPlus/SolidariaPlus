@@ -1,0 +1,5 @@
+# Helm values of smart-accounting-rules-service for the shared chart deploy/helm/solidaria-service (KAN-33).
+# The service is not deployed yet: enabled stays false until its first release.
+enabled: false
+nameOverride: smart-accounting-rules-service
+containerPort: 8092

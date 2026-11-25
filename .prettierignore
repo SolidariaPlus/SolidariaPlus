@@ -9,3 +9,8 @@ pnpm-lock.yaml
 .gradle/
 **/CHANGELOG.md
 .release-please-manifest.json
+# Helm templates are Go templates, not plain YAML
+**/templates/*.yaml
+**/templates/*.tpl
+# Terraform working directories
+**/.terraform/

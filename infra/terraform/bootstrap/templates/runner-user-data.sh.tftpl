@@ -1,0 +1,52 @@
+#!/bin/bash
+set -euo pipefail
+exec > >(tee -a /var/log/solidaria-runner-setup.log) 2>&1
+
+REGION="${region}"
+RUNNER_DIR=/opt/actions-runner
+TOKEN_PARAMETER="${registration_parameter}"
+
+echo "Installing packages"
+dnf -y install docker git jq tar gzip unzip skopeo libicu dnf-plugins-core openssl
+systemctl enable --now docker
+usermod -aG docker ec2-user
+
+echo "Installing Terraform ${terraform_version}, Helm ${helm_version} and kubectl ${kubectl_version}"
+dnf config-manager --add-repo https://rpm.releases.hashicorp.com/AmazonLinux/hashicorp.repo
+dnf -y install "terraform-${terraform_version}"
+curl -fsSL "https://get.helm.sh/helm-v${helm_version}-linux-amd64.tar.gz" | tar -xz -C /tmp
+install -m 0755 /tmp/linux-amd64/helm /usr/local/bin/helm
+curl -fsSL -o /usr/local/bin/kubectl "https://dl.k8s.io/release/v${kubectl_version}/bin/linux/amd64/kubectl"
+chmod 0755 /usr/local/bin/kubectl
+
+echo "Installing the GitHub Actions runner ${runner_version}"
+mkdir -p "$RUNNER_DIR"
+cd "$RUNNER_DIR"
+curl -fsSL -o runner.tar.gz \
+  "https://github.com/actions/runner/releases/download/v${runner_version}/actions-runner-linux-x64-${runner_version}.tar.gz"
+tar -xzf runner.tar.gz
+rm -f runner.tar.gz
+chown -R ec2-user:ec2-user "$RUNNER_DIR"
+
+if [ -f "$RUNNER_DIR/.runner" ]; then
+  echo "Runner already registered"
+else
+  if ! TOKEN="$(aws ssm get-parameter --region "$REGION" --name "$TOKEN_PARAMETER" --with-decryption \
+    --query Parameter.Value --output text 2>/dev/null)"; then
+    echo "No registration token in $TOKEN_PARAMETER: apply the bootstrap again with -var runner_registration_token=<token>" >&2
+    exit 1
+  fi
+  sudo -u ec2-user ./config.sh --unattended \
+    --url "https://github.com/${repository}" \
+    --token "$TOKEN" \
+    --name "${runner_name}" \
+    --labels "${runner_label}" \
+    --work _work \
+    --replace
+  unset TOKEN
+  aws ssm delete-parameter --region "$REGION" --name "$TOKEN_PARAMETER" || true
+fi
+
+./svc.sh install ec2-user
+./svc.sh start
+echo "Runner ${runner_label} is online"

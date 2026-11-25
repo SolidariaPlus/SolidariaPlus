@@ -1,0 +1,7 @@
+# QA: same stack as Production at reduced scale (KAN-11 section 5.3).
+prometheus:
+  prometheusSpec:
+    retention: 3d
+    resources:
+      requests:
+        memory: 384Mi

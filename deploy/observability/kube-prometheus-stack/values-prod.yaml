@@ -1,0 +1,9 @@
+# Production: full monitoring (KAN-11 section 5.3).
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    resources:
+      requests:
+        memory: 768Mi
+      limits:
+        memory: 1536Mi

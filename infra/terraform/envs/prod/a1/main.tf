@@ -1,0 +1,342 @@
+# Account slot A1 of one environment (KAN-29 to KAN-33). envs/qa/a1 and envs/prod/a1 contain the
+# same .tf files and differ only in terraform.tfvars (principle E-03; ci.yml checks it).
+#
+# Applied by the self-hosted runner of the account:
+#   infra.yml    on a push to qa (QA) or main (Production), with the current session value
+#   session.yml  session=on (twice: the second pass wires the HTTP API to the ALB) or session=off
+#
+# Resources with an hourly price depend on var.session: NAT gateways, SSM endpoints, EKS cluster
+# and node group, Valkey, the Elastic IP of the broker. Aurora, the broker instance and the domain
+# controller are stopped, not deleted. The rest (VPC, ECR, S3, CloudFront, HTTP API, secrets,
+# parameters, SNS, log groups) has no hourly price and stays.
+
+locals {
+  environment_tag = var.environment == "prod" ? "production" : "qa"
+  name            = "solidaria-${var.environment}-${lower(var.slot)}"
+  session_on      = var.session == "on"
+  messaging_dir   = "${path.root}/../../../../messaging"
+  ad_dir          = "${path.root}/../../../../ad"
+}
+
+# ---------------------------------------------------------------------------------------------
+# Permanent network and runner, created by infra/terraform/bootstrap
+# ---------------------------------------------------------------------------------------------
+data "aws_vpc" "this" {
+  tags = {
+    Name = local.name
+  }
+}
+
+data "aws_subnets" "public" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.this.id]
+  }
+
+  tags = {
+    tier = "public"
+  }
+}
+
+data "aws_subnet" "public" {
+  for_each = toset(data.aws_subnets.public.ids)
+
+  id = each.value
+}
+
+data "aws_security_group" "runner" {
+  vpc_id = data.aws_vpc.this.id
+  name   = "${local.name}-runner"
+}
+
+locals {
+  public_subnets     = sort([for subnet in data.aws_subnet.public : "${subnet.availability_zone}|${subnet.id}"])
+  availability_zones = [for entry in local.public_subnets : split("|", entry)[0]]
+  public_subnet_ids  = [for entry in local.public_subnets : split("|", entry)[1]]
+}
+
+# ---------------------------------------------------------------------------------------------
+# Persistent security groups (no hourly price): the stores and the broker admit them, so their
+# rules survive the recreation of the cluster at every session.
+# ---------------------------------------------------------------------------------------------
+resource "aws_security_group" "nodes" {
+  name        = "${local.name}-nodes"
+  description = "Added to every EKS node of ${local.name}"
+  vpc_id      = data.aws_vpc.this.id
+
+  tags = {
+    Name = "${local.name}-nodes"
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "nodes_self" {
+  security_group_id            = aws_security_group.nodes.id
+  description                  = "Node to node"
+  ip_protocol                  = "-1"
+  referenced_security_group_id = aws_security_group.nodes.id
+}
+
+# Pods reach AWS APIs, the broker Elastic IP and image registries through the NAT gateway.
+#trivy:ignore:AVD-AWS-0104
+resource "aws_vpc_security_group_egress_rule" "nodes_all" {
+  security_group_id = aws_security_group.nodes.id
+  description       = "Outbound"
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+resource "aws_security_group" "alb" {
+  name        = "${local.name}-alb"
+  description = "ALB of the Ingress (AWS Load Balancer Controller); admits the VPC link"
+  vpc_id      = data.aws_vpc.this.id
+
+  tags = {
+    Name = "${local.name}-alb"
+  }
+}
+
+resource "aws_vpc_security_group_egress_rule" "alb_nodes" {
+  security_group_id            = aws_security_group.alb.id
+  description                  = "To the pods on the nodes"
+  ip_protocol                  = "tcp"
+  from_port                    = 0
+  to_port                      = 65535
+  referenced_security_group_id = aws_security_group.nodes.id
+}
+
+locals {
+  store_clients = {
+    nodes   = aws_security_group.nodes.id
+    bastion = module.bastion.security_group_id
+  }
+}
+
+# ---------------------------------------------------------------------------------------------
+# Network, compute and registry (KAN-29)
+# ---------------------------------------------------------------------------------------------
+module "network" {
+  source = "../../../modules/network"
+
+  name                 = local.name
+  vpc_id               = data.aws_vpc.this.id
+  vpc_cidr             = data.aws_vpc.this.cidr_block
+  availability_zones   = local.availability_zones
+  public_subnet_ids    = local.public_subnet_ids
+  session_on           = local.session_on
+  nat_gateway_count    = var.nat_gateway_count
+  enable_ssm_endpoints = var.platform_slot
+  cluster_name         = local.name
+}
+
+module "alerting" {
+  source = "../../../modules/alerting"
+
+  name                      = local.name
+  environment               = var.environment
+  slot                      = var.slot
+  alert_email               = var.alert_email
+  log_retention_days        = var.log_retention_days
+  broker_instance_id        = var.platform_slot ? module.messaging[0].instance_id : ""
+  aurora_cluster_identifier = length(var.database_services) > 0 ? module.aurora[0].cluster_identifier : ""
+}
+
+module "eks" {
+  source = "../../../modules/eks-cluster"
+
+  name                   = local.name
+  environment            = var.environment
+  slot                   = var.slot
+  session_on             = local.session_on
+  kubernetes_version     = var.kubernetes_version
+  subnet_ids             = module.network.private_app_subnet_ids
+  node_security_group_id = aws_security_group.nodes.id
+  api_client_security_group_ids = {
+    runner  = data.aws_security_group.runner.id
+    bastion = module.bastion.security_group_id
+  }
+  node_instance_types = var.node_instance_types
+  node_desired_size   = var.node_desired_size
+  node_min_size       = var.node_min_size
+  node_max_size       = var.node_max_size
+
+  # The NAT route must exist before the nodes join; the log group before the control plane.
+  depends_on = [module.network, module.alerting]
+}
+
+module "ecr" {
+  source = "../../../modules/ecr"
+
+  repositories     = toset(var.services)
+  pull_account_ids = var.promotion_pull_account_ids
+}
+
+# ---------------------------------------------------------------------------------------------
+# Data stores, secrets and bastion (KAN-30)
+# ---------------------------------------------------------------------------------------------
+module "bastion" {
+  source = "../../../modules/bastion"
+
+  name       = local.name
+  vpc_id     = data.aws_vpc.this.id
+  subnet_ids = module.network.private_app_subnet_ids
+}
+
+module "aurora" {
+  source = "../../../modules/aurora"
+  count  = length(var.database_services) > 0 ? 1 : 0
+
+  name                      = local.name
+  environment               = var.environment
+  session_on                = local.session_on
+  vpc_id                    = data.aws_vpc.this.id
+  subnet_ids                = module.network.private_data_subnet_ids
+  client_security_group_ids = local.store_clients
+  services                  = var.database_services
+  instance_class            = var.aurora_instance_class
+  reader_count              = var.aurora_reader_count
+}
+
+module "valkey" {
+  source = "../../../modules/valkey"
+  count  = length(var.cache_services) > 0 ? 1 : 0
+
+  name                      = local.name
+  environment               = var.environment
+  session_on                = local.session_on
+  vpc_id                    = data.aws_vpc.this.id
+  subnet_ids                = module.network.private_data_subnet_ids
+  client_security_group_ids = local.store_clients
+  services                  = var.cache_services
+  node_type                 = var.valkey_node_type
+  replicas                  = var.valkey_replicas
+}
+
+# ---------------------------------------------------------------------------------------------
+# Environment CA, directory and brokers (KAN-31, A1 only)
+# ---------------------------------------------------------------------------------------------
+module "pki" {
+  source = "../../../modules/pki"
+  count  = var.platform_slot ? 1 : 0
+
+  environment = var.environment
+}
+
+module "messaging" {
+  source = "../../../modules/messaging"
+  count  = var.platform_slot ? 1 : 0
+
+  name                      = local.name
+  environment               = var.environment
+  session_on                = local.session_on
+  vpc_id                    = data.aws_vpc.this.id
+  vpc_cidr                  = data.aws_vpc.this.cidr_block
+  subnet_id                 = local.public_subnet_ids[0]
+  client_security_group_ids = local.store_clients
+  public_client_cidrs       = var.broker_public_client_cidrs
+  rabbitmq_jwks_url         = var.rabbitmq_jwks_url
+  messaging_dir             = local.messaging_dir
+  ca_cert_pem               = module.pki[0].ca_cert_pem
+  ca_private_key_pem        = module.pki[0].ca_private_key_pem
+}
+
+module "directory" {
+  source = "../../../modules/directory"
+  count  = var.platform_slot ? 1 : 0
+
+  name                            = local.name
+  environment                     = var.environment
+  session_on                      = local.session_on
+  vpc_id                          = data.aws_vpc.this.id
+  vpc_cidr                        = data.aws_vpc.this.cidr_block
+  subnet_id                       = module.network.private_data_subnet_ids[0]
+  ldaps_client_security_group_ids = { nodes = aws_security_group.nodes.id }
+  ad_dir                          = local.ad_dir
+  ca_cert_pem                     = module.pki[0].ca_cert_pem
+  ca_private_key_pem              = module.pki[0].ca_private_key_pem
+}
+
+# ---------------------------------------------------------------------------------------------
+# Client entry (KAN-32). The ALB is created by the Ingress of the shared Helm chart; the second
+# pass of session-start finds it by the tags of the AWS Load Balancer Controller.
+# ---------------------------------------------------------------------------------------------
+data "aws_lbs" "ingress" {
+  count = local.session_on ? 1 : 0
+
+  tags = {
+    "elbv2.k8s.aws/cluster" = local.name
+    "ingress.k8s.aws/stack" = local.name
+  }
+}
+
+data "aws_lb_listener" "ingress_http" {
+  count = local.session_on && length(try(data.aws_lbs.ingress[0].arns, [])) > 0 ? 1 : 0
+
+  load_balancer_arn = one(data.aws_lbs.ingress[0].arns)
+  port              = 80
+}
+
+module "http_api" {
+  source = "../../../modules/http-api"
+
+  name                   = local.name
+  vpc_id                 = data.aws_vpc.this.id
+  subnet_ids             = module.network.private_app_subnet_ids
+  alb_security_group_id  = aws_security_group.alb.id
+  alb_listener_arn       = try(data.aws_lb_listener.ingress_http[0].arn, "")
+  cors_allow_origins     = var.cors_allow_origins
+  throttling_rate_limit  = var.api_throttling_rate_limit
+  throttling_burst_limit = var.api_throttling_burst_limit
+}
+
+module "edge" {
+  source = "../../../modules/edge"
+  count  = var.platform_slot ? 1 : 0
+
+  name         = local.name
+  environment  = var.environment
+  api_endpoint = module.http_api.api_endpoint
+}
+
+# ---------------------------------------------------------------------------------------------
+# Settings read by the services and the pipelines (/solidaria/<env>/<service>/...)
+# ---------------------------------------------------------------------------------------------
+module "service_settings" {
+  source = "../../../modules/service-settings"
+
+  environment = var.environment
+  parameters = merge(
+    var.platform_slot ? {
+      for service in var.services : "${service}/kafka/bootstrap-servers" => "${module.messaging[0].private_ip}:9092"
+    } : {},
+    var.platform_slot ? {
+      for service in var.services : "${service}/rabbitmq/endpoint" => "amqps://${module.messaging[0].private_ip}:5671/solidaria"
+    } : {},
+    var.platform_slot && contains(var.services, "identity-access-service") ? {
+      "identity-access-service/ldap/url"         = module.directory[0].ldaps_url
+      "identity-access-service/ldap/domain-name" = module.directory[0].domain_name
+    } : {},
+  )
+}
+
+# Values that the workflows and the platform root read (no account ids in workflows).
+resource "aws_ssm_parameter" "platform" {
+  for_each = {
+    "cluster-name"           = local.name
+    "alb-security-group-id"  = aws_security_group.alb.id
+    "node-security-group-id" = aws_security_group.nodes.id
+    "vpc-id"                 = data.aws_vpc.this.id
+    "http-api-endpoint"      = module.http_api.api_endpoint
+    "apps-log-group"         = module.alerting.apps_log_group
+  }
+
+  name  = "/solidaria/${var.environment}/${lower(var.slot)}/platform/${each.key}"
+  type  = "String"
+  value = each.value
+}
+
+resource "aws_ssm_parameter" "session_state" {
+  name        = "/solidaria/${var.environment}/${lower(var.slot)}/session/state"
+  description = "Session state of the slot, read by the deployment workflows and the status endpoint (ADR-106)."
+  type        = "String"
+  value       = var.session
+}

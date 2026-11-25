@@ -1,0 +1,7 @@
+# Production defaults (KAN-11 section 5.3). The teller critical path (MS-03, MS-08) raises
+# replicaCount to 2 and enables the PodDisruptionBudget in its own values-prod.yaml.
+environment: production
+replicaCount: 1
+autoscaling:
+  minReplicas: 1
+  maxReplicas: 3

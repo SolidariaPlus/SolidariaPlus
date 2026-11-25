@@ -61,6 +61,20 @@ pnpm turbo run lint test             # frontend: ESLint + Vitest/Jest
 | Mobile (Metro)               | `pnpm --filter @solidariaplus/mobile dev`      |
 | Frontend full pipeline       | `pnpm turbo run lint typecheck build test`     |
 
+## Local environment
+
+`compose.yaml` runs every infrastructure dependency on localhost, with no AWS account or credential
+(KAN-11 §5.2). The profile `identity` starts the dependencies of MS-17: PostgreSQL, Valkey, Kafka
+(KRaft, SCRAM and ACLs), RabbitMQ (OAuth 2.0 backend), LocalStack, Prometheus and Grafana.
+
+```bash
+cp .env.example .env                              # optional
+docker compose --profile identity up -d --wait    # every container must turn healthy
+```
+
+Details and endpoints: [`infra/local/README.md`](./infra/local/README.md); shared broker definitions:
+[`infra/messaging/README.md`](./infra/messaging/README.md).
+
 ## Backend build conventions (`build-logic/`)
 
 - `solidaria.java-conventions` — Java toolchain 21, JUnit 6, JaCoCo (XML + HTML), Spotless

@@ -1,0 +1,39 @@
+{{- if and .Values.enabled .Values.ingress.enabled }}
+{{- $name := include "solidaria.name" . }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "solidaria.labels" . | nindent 4 }}
+  annotations:
+    alb.ingress.kubernetes.io/scheme: {{ .Values.ingress.scheme }}
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    alb.ingress.kubernetes.io/healthcheck-path: {{ .Values.probes.readiness.path }}
+    {{- with .Values.ingress.groupName }}
+    alb.ingress.kubernetes.io/group.name: {{ . }}
+    {{- end }}
+    {{- with .Values.ingress.securityGroupId }}
+    alb.ingress.kubernetes.io/security-groups: {{ . }}
+    alb.ingress.kubernetes.io/manage-backend-security-group-rules: "true"
+    {{- end }}
+    {{- if and .Values.ingress.originVerify.enabled .Values.ingress.originVerify.value }}
+    alb.ingress.kubernetes.io/conditions.{{ $name }}: >-
+      [{"field":"http-header","httpHeaderConfig":{"httpHeaderName":{{ .Values.ingress.originVerify.headerName | quote }},"values":[{{ .Values.ingress.originVerify.value | quote }}]}}]
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - http:
+        paths:
+          {{- range .Values.ingress.paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ $name }}
+                port:
+                  name: http
+          {{- end }}
+{{- end }}

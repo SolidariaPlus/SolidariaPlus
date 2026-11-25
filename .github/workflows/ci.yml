@@ -90,6 +90,8 @@ jobs:
             compose:
               - *shared
               - compose.yaml
+              - infra/local/**
+              - infra/messaging/**
             helm:
               - *shared
               - deploy/helm/**
@@ -276,7 +278,26 @@ jobs:
             echo "compose.yaml is empty, nothing to validate"
             exit 0
           fi
-          docker compose -f compose.yaml config --quiet
+          # Obsolete top-level "version" key (Compose Specification, KAN-11 section 6.4)
+          if grep -Eq '^version:' compose.yaml; then
+            echo "::error file=compose.yaml::Remove the obsolete top-level 'version' key"
+            exit 1
+          fi
+          docker compose -f compose.yaml --profile '*' config --quiet
+          # Every container needs a health check
+          missing=$(docker compose -f compose.yaml --profile '*' config --format json \
+            | jq -r '.services | to_entries[] | select(.value.healthcheck == null or .value.healthcheck.disable == true) | .key')
+          if [ -n "$missing" ]; then
+            echo "::error file=compose.yaml::Services without a health check: $(echo "$missing" | tr '\n' ' ')"
+            exit 1
+          fi
+          # Every depends_on waits for a healthy dependency
+          loose=$(docker compose -f compose.yaml --profile '*' config --format json \
+            | jq -r '.services | to_entries[] | .key as $s | (.value.depends_on // {}) | to_entries[] | select(.value.condition != "service_healthy") | "\($s) -> \(.key)"')
+          if [ -n "$loose" ]; then
+            echo "::error file=compose.yaml::depends_on without condition service_healthy: $(echo "$loose" | tr '\n' ' ')"
+            exit 1
+          fi
 
   helm:
     needs: changes

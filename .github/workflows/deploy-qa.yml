@@ -1,26 +1,204 @@
+# Build once and deploy to QA (KAN-34; KAN-11 sections 6.1 to 6.6; KAN-2 ADR-077, ADR-119).
+# On every push to qa:
+#   affected  services whose helm/values.yaml has enabled: true and whose code, shared libraries,
+#             build logic or chart changed (all of them on a manual run)
+#   service   on the runner of the QA account of the service: build the image once, scan it with
+#             Trivy, push sha-<commit> to the ECR repository of that account, deploy it by digest
+#             with helm upgrade --atomic, run the smoke tests
+#   web       build the web client on GitHub, publish it to the S3 bucket and CloudFront of QA-A1
+#   manifest  digests deployed in QA at this commit, uploaded as the artifact "release-manifest";
+#             promote-prod.yml copies exactly these digests to Production
+# The GitHub environment "qa" records the deployment for Jira (rule AR-02, .jira/config.yml).
 name: deploy-qa
 
 on:
   push:
-    branches: [main]
+    branches: [qa]
   workflow_dispatch:
 
 permissions:
   contents: read
   deployments: write
-  id-token: write # OIDC to AWS
 
 concurrency:
   group: deploy-qa
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  affected:
     runs-on: ubuntu-latest
-    # The "qa" environment creates a GitHub deployment that .jira/config.yml maps to "testing" (rule AR-02)
+    outputs:
+      services: ${{ steps.affected.outputs.services }}
+      web: ${{ steps.affected.outputs.web }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - id: affected
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          all=false
+          if [ "$EVENT" != "push" ] || [[ "$BEFORE" =~ ^0+$ ]] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            all=true
+            changed=""
+          else
+            changed=$(git diff --name-only "$BEFORE" HEAD)
+          fi
+          shared='^(libs/|build-logic/|gradle/|settings.gradle.kts|deploy/helm/|\.github/workflows/deploy-qa.yml|\.github/scripts/helm-deploy.sh)'
+          echo "$changed" | grep -Eq "$shared" && all=true
+          services='[]'
+          for values in services/*/*/helm/values.yaml; do
+            grep -Eq '^enabled:[[:space:]]*true' "$values" || continue
+            dir=$(dirname "$(dirname "$values")")
+            name=$(basename "$dir")
+            if [ "$all" = true ] || echo "$changed" | grep -q "^$dir/"; then
+              slot=$(python3 .github/scripts/accounts.py slot-of qa "$name")
+              services=$(echo "$services" | jq -c --arg n "$name" --arg p "$dir" --arg s "$slot" \
+                '. + [{name: $n, path: $p, slot: $s, slot_lower: ($s | ascii_downcase), runner: ("qa-" + $s)}]')
+            fi
+          done
+          web=false
+          if [ "$all" = true ] || echo "$changed" | grep -Eq '^(apps/web/|packages/|pnpm-lock.yaml)'; then web=true; fi
+          echo "Affected services: $services; web: $web"
+          echo "services=$services" >> "$GITHUB_OUTPUT"
+          echo "web=$web" >> "$GITHUB_OUTPUT"
+
+  service:
+    needs: affected
+    if: needs.affected.outputs.services != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.affected.outputs.services) }}
+    runs-on: [self-hosted, "${{ matrix.service.runner }}"]
+    environment: qa
+    env:
+      SERVICE: ${{ matrix.service.name }}
+      SERVICE_PATH: ${{ matrix.service.path }}
+      SLOT: ${{ matrix.service.slot }}
+      SLOT_LOWER: ${{ matrix.service.slot_lower }}
+      TRIVY_IMAGE: aquasec/trivy:0.76.2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/assert-account
+        id: account
+        with:
+          environment: qa
+          slot: ${{ matrix.service.slot }}
+      - name: The session is on
+        run: |
+          state=$(aws ssm get-parameter --name "/solidaria/qa/$SLOT_LOWER/session/state" --query Parameter.Value --output text 2>/dev/null || echo off)
+          [ "$state" = "on" ] || { echo "::error::The QA session of $SLOT is off. Run session.yml (qa, start) and re-run this job."; exit 1; }
+      - name: Build the image once
+        run: |
+          docker build -f "$SERVICE_PATH/Dockerfile" \
+            --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            -t "$SERVICE:sha-${{ github.sha }}" .
+      - name: Scan the image
+        run: |
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$TRIVY_IMAGE" image \
+            --severity CRITICAL --ignore-unfixed --exit-code 1 --no-progress "$SERVICE:sha-${{ github.sha }}"
+      - name: Push to the ECR repository of the account
+        id: push
+        env:
+          ACCOUNT: ${{ steps.account.outputs.account-id }}
+        run: |
+          registry="$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com"
+          aws ecr get-login-password | docker login --username AWS --password-stdin "$registry"
+          image="$registry/$SERVICE:sha-${{ github.sha }}"
+          docker tag "$SERVICE:sha-${{ github.sha }}" "$image"
+          docker push "$image"
+          digest=$(aws ecr describe-images --repository-name "$SERVICE" --image-ids "imageTag=sha-${{ github.sha }}" \
+            --query 'imageDetails[0].imageDigest' --output text)
+          echo "Pushed $image ($digest)"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          docker image prune -f --filter "until=72h" >/dev/null
+      - uses: ./.github/actions/kube-auth
+        with:
+          environment: qa
+          slot: ${{ matrix.service.slot }}
+      - name: Deploy by digest
+        run: .github/scripts/helm-deploy.sh qa "$SLOT" "$SERVICE" "${{ steps.push.outputs.digest }}"
+      - name: Smoke tests
+        run: .github/scripts/smoke.sh qa "$SERVICE"
+
+  web-build:
+    needs: affected
+    if: needs.affected.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .tool-versions
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @solidariaplus/web build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: web-dist
+          path: apps/web/dist
+          retention-days: 30
+
+  web-publish:
+    needs: web-build
+    runs-on: [self-hosted, qa-A1]
     environment: qa
     steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to QA
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/assert-account
+        with:
+          environment: qa
+          slot: A1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: web-dist
+          path: web-dist
+      - name: Publish to S3 and invalidate CloudFront
         run: |
-          echo "TODO: build images, push and deploy to the QA AWS account (infra/accounts.yml)"
+          bucket=$(aws ssm get-parameter --name /solidaria/qa/edge/web-bucket --query Parameter.Value --output text)
+          distribution=$(aws ssm get-parameter --name /solidaria/qa/edge/distribution-id --query Parameter.Value --output text)
+          aws s3 sync web-dist "s3://$bucket" --delete --cache-control "public,max-age=300"
+          aws s3 cp web-dist/index.html "s3://$bucket/index.html" --cache-control "no-cache"
+          aws cloudfront create-invalidation --distribution-id "$distribution" --paths '/*' >/dev/null
+          echo "Web client published: https://$(aws ssm get-parameter --name /solidaria/qa/edge/domain-name --query Parameter.Value --output text)/"
+
+  manifest:
+    needs: [service, web-publish]
+    if: ${{ !cancelled() && !contains(needs.*.result, 'failure') }}
+    runs-on: [self-hosted, qa-A1]
+    environment: qa
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/assert-account
+        id: account
+        with:
+          environment: qa
+          slot: A1
+      - name: Release manifest of the digests tested in QA
+        env:
+          ACCOUNT: ${{ steps.account.outputs.account-id }}
+        run: |
+          manifest='{"commit":"${{ github.sha }}","services":[]}'
+          for values in services/*/*/helm/values.yaml; do
+            grep -Eq '^enabled:[[:space:]]*true' "$values" || continue
+            name=$(basename "$(dirname "$(dirname "$values")")")
+            slot=$(python3 .github/scripts/accounts.py slot-of qa "$name")
+            digest=$(aws ssm get-parameter --name "/solidaria/qa/$(echo "$slot" | tr '[:upper:]' '[:lower:]')/deploy/$name/digest" \
+              --query Parameter.Value --output text 2>/dev/null || true)
+            [ -n "$digest" ] || continue
+            manifest=$(echo "$manifest" | jq -c --arg n "$name" --arg s "$slot" --arg d "$digest" \
+              '.services += [{name: $n, slot: $s, digest: $d}]')
+          done
+          echo "$manifest" | jq . | tee release-manifest.json
+          aws ssm put-parameter --overwrite --type String --name /solidaria/qa/release/tested-commit --value "${{ github.sha }}" >/dev/null
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-manifest
+          path: release-manifest.json
+          retention-days: 90

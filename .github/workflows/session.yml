@@ -1,8 +1,165 @@
-name: Session
+name: session
+
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Environment
+        type: choice
+        options: [qa, production]
+        required: true
+      action:
+        description: start or stop
+        type: choice
+        options: [start, stop]
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: session-${{ inputs.environment }}
+  cancel-in-progress: false
+
 jobs:
-  placeholder:
+  matrix:
     runs-on: ubuntu-latest
+    outputs:
+      slots: ${{ steps.matrix.outputs.slots }}
     steps:
-      - run: echo "Pending implementation"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: matrix
+        env:
+          ENVIRONMENT: ${{ inputs.environment }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          slots=$(python3 .github/scripts/accounts.py slots "$ENVIRONMENT")
+          # Stop in reverse order, so that A1 (broker, directory, entry) goes last.
+          if [ "$ACTION" = "stop" ]; then slots=$(echo "$slots" | jq -c 'reverse'); fi
+          echo "slots=$slots" >> "$GITHUB_OUTPUT"
+
+  session:
+    needs: matrix
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.matrix.outputs.slots) }}
+    runs-on: [self-hosted, "${{ matrix.target.runner }}"]
+    environment: ${{ matrix.target.github_environment }}
+    timeout-minutes: 90
+    env:
+      ENVIRONMENT: ${{ matrix.target.environment }}
+      SLOT: ${{ matrix.target.slot }}
+      SLOT_LOWER: ${{ matrix.target.slot_lower }}
+      # Repository variable (Settings > Secrets and variables > Actions > Variables); not committed.
+      TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
+      ACTION: ${{ inputs.action }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/assert-account
+        with:
+          environment: ${{ matrix.target.environment }}
+          slot: ${{ matrix.target.slot }}
+
+      # ---------------------------------------------------------------- start
+      - name: Terraform session=on (first pass)
+        if: inputs.action == 'start'
+        run: .github/scripts/tf.sh "$ENVIRONMENT" "$SLOT" infra apply -var session=on
+      - name: Kubernetes side
+        if: inputs.action == 'start'
+        run: .github/scripts/tf.sh "$ENVIRONMENT" "$SLOT" platform apply
+      - uses: ./.github/actions/kube-auth
+        if: inputs.action == 'start'
+        with:
+          environment: ${{ matrix.target.environment }}
+          slot: ${{ matrix.target.slot }}
+      - name: Deploy the current digests
+        if: inputs.action == 'start'
+        run: |
+          for service in $(python3 .github/scripts/accounts.py services "$ENVIRONMENT" "$SLOT" | jq -r '.[]'); do
+            digest=$(aws ssm get-parameter --name "/solidaria/$ENVIRONMENT/$SLOT_LOWER/deploy/$service/digest" \
+              --query Parameter.Value --output text 2>/dev/null || true)
+            if [ -z "$digest" ]; then
+              echo "$service has never been deployed to $ENVIRONMENT-$SLOT; skipped"
+              continue
+            fi
+            .github/scripts/helm-deploy.sh "$ENVIRONMENT" "$SLOT" "$service" "$digest"
+          done
+      - name: Wait for the ALB of the Ingress
+        if: inputs.action == 'start'
+        run: |
+          if [ "$(kubectl get ingress -A --no-headers 2>/dev/null | wc -l)" -eq 0 ]; then
+            echo "No Ingress in the slot; the HTTP API stays without routes"
+            exit 0
+          fi
+          for _ in $(seq 1 40); do
+            address=$(kubectl get ingress -A -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}')
+            [ -n "$address" ] && { echo "ALB $address"; exit 0; }
+            sleep 15
+          done
+          echo "::error::The ALB was not created"; exit 1
+      - name: Terraform session=on (second pass, HTTP API to ALB)
+        if: inputs.action == 'start'
+        run: .github/scripts/tf.sh "$ENVIRONMENT" "$SLOT" infra apply -var session=on
+      - name: Broker ready
+        if: inputs.action == 'start' && matrix.target.slot == 'A1'
+        run: |
+          for _ in $(seq 1 60); do
+            status=$(aws ssm get-parameter --name "/solidaria/$ENVIRONMENT/broker/status" --query Parameter.Value --output text 2>/dev/null || true)
+            public=$(aws ssm get-parameter --name "/solidaria/$ENVIRONMENT/broker/public-address" --query Parameter.Value --output text)
+            case "$status" in "ready $public "*) echo "Broker $status"; exit 0 ;; esac
+            sleep 15
+          done
+          echo "::error::The broker did not report ready for $public"; exit 1
+
+      # ---------------------------------------------------------------- stop
+      - name: Pre-stop report of the Kafka consumer lag (warning only)
+        if: inputs.action == 'stop' && matrix.target.slot == 'A1'
+        continue-on-error: true
+        run: |
+          instance=$(aws ec2 describe-instances --filters "Name=tag:role,Values=broker" "Name=instance-state-name,Values=running" \
+            --query 'Reservations[0].Instances[0].InstanceId' --output text)
+          [ "$instance" != "None" ] || { echo "Broker not running"; exit 0; }
+          command=$(aws ssm send-command --instance-ids "$instance" --document-name AWS-RunShellScript \
+            --parameters 'commands=["docker exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server 127.0.0.1:9091 --describe --all-groups"]' \
+            --query Command.CommandId --output text)
+          aws ssm wait command-executed --command-id "$command" --instance-id "$instance" || true
+          output=$(aws ssm get-command-invocation --command-id "$command" --instance-id "$instance" --query StandardOutputContent --output text)
+          echo "$output"
+          lagging=$(echo "$output" | awk 'NR>1 && $6 ~ /^[0-9]+$/ && $6 > 0' | wc -l)
+          if [ "$lagging" -gt 0 ]; then
+            echo "::warning::$lagging partitions have consumer lag; the messages stay on the broker volume until the next session"
+          fi
+      - uses: ./.github/actions/kube-auth
+        id: stop-kube
+        if: inputs.action == 'stop'
+        continue-on-error: true
+        with:
+          environment: ${{ matrix.target.environment }}
+          slot: ${{ matrix.target.slot }}
+      - name: Scale to zero and delete the Ingresses
+        if: inputs.action == 'stop' && steps.stop-kube.outcome == 'success'
+        run: |
+          kubectl -n apps scale deployment --all --replicas=0 || true
+          kubectl delete ingress -A --all --wait=true --timeout=5m || true
+          cluster="solidaria-$ENVIRONMENT-$SLOT_LOWER"
+          for _ in $(seq 1 30); do
+            left=$(aws elbv2 describe-load-balancers --query 'LoadBalancers[].LoadBalancerArn' --output text \
+              | xargs -r -n1 aws elbv2 describe-tags --resource-arns 2>/dev/null \
+              | jq -r --arg c "$cluster" '.TagDescriptions[] | select(any(.Tags[]; .Key=="elbv2.k8s.aws/cluster" and .Value==$c)) | .ResourceArn' | wc -l)
+            [ "$left" -eq 0 ] && { echo "ALBs removed"; break; }
+            sleep 10
+          done
+      - name: Destroy the Kubernetes side
+        if: inputs.action == 'stop' && steps.stop-kube.outcome == 'success'
+        run: .github/scripts/tf.sh "$ENVIRONMENT" "$SLOT" platform destroy
+      - name: Terraform session=off
+        if: inputs.action == 'stop'
+        run: .github/scripts/tf.sh "$ENVIRONMENT" "$SLOT" infra apply -var session=off
+      - name: Bastion off
+        if: inputs.action == 'stop'
+        run: scripts/bastion.sh off "$ENVIRONMENT" "$SLOT"
+      - name: Nothing with an hourly price remains
+        if: inputs.action == 'stop'
+        run: .github/scripts/verify-session-off.sh "$AWS_REGION"
