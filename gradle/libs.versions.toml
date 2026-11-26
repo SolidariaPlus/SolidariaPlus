@@ -31,6 +31,12 @@ spring-boot-starter-webmvc-test = { module = "org.springframework.boot:spring-bo
 spring-boot-starter-flyway = { module = "org.springframework.boot:spring-boot-starter-flyway" }
 spring-boot-testcontainers = { module = "org.springframework.boot:spring-boot-testcontainers" }
 
+# Spring Oauth2.0 Authorization Server
+spring-boot-starter-oauth2-authorization-server = { module = "org.springframework.boot:spring-boot-starter-oauth2-authorization-server" }
+
+# Spring for Apache Kafka (version from Spring Boot)
+spring-boot-starter-kafka = { module = "org.springframework.boot:spring-boot-starter-kafka" }
+
 # Spring Cloud AWS (versions from spring-cloud-aws-bom)
 spring-cloud-aws-starter = { module = "io.awspring.cloud:spring-cloud-aws-starter" }
 spring-cloud-aws-starter-sqs = { module = "io.awspring.cloud:spring-cloud-aws-starter-sqs" }

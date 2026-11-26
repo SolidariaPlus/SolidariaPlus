@@ -1,9 +1,21 @@
 spring:
   application:
     name: identity-access-service
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    client-id: identity-access-service
+    security:
+      protocol: ${KAFKA_SECURITY_PROTOCOL:SASL_PLAINTEXT}
+    properties:
+      sasl.mechanism: SCRAM-SHA-512
+      sasl.jaas.config: org.apache.kafka.common.security.scram.ScramLoginModule required username="${KAFKA_USERNAME:identity-access-service}" password="${KAFKA_PASSWORD}";
+    consumer:
+      group-id: identity-access-service
+      auto-offset-reset: earliest
 
 server:
   port: ${SERVER_PORT:8097}
+  forward-headers-strategy: framework
 
 management:
   endpoints:

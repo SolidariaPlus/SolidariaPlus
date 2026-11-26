@@ -1,5 +1,7 @@
 package com.solidariaplus.identity.identityaccess;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
+import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_THROW_GENERIC_EXCEPTIONS;
 import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_USE_FIELD_INJECTION;
@@ -29,6 +31,30 @@ class ArchitectureTest {
 
     @ArchTest
     static final ArchRule NO_GENERIC_EXCEPTIONS = NO_CLASSES_SHOULD_THROW_GENERIC_EXCEPTIONS.allowEmptyShould(true);
+
+    @ArchTest
+    static final ArchRule DOMAIN_IS_FRAMEWORK_FREE = noClasses()
+            .that()
+            .resideInAPackage("..domain..")
+            .should()
+            .dependOnClassesThat()
+            .resideInAnyPackage("org.springframework..", "software.amazon..", "io.awspring..", "tools.jackson..");
+
+    @ArchTest
+    static final ArchRule HEXAGONAL_LAYERS = layeredArchitecture()
+            .consideringOnlyDependenciesInLayers()
+            .layer("Domain")
+            .definedBy("..domain..")
+            .layer("Application")
+            .definedBy("..application..")
+            .layer("Infrastructure")
+            .definedBy("..infrastructure..")
+            .whereLayer("Infrastructure")
+            .mayNotBeAccessedByAnyLayer()
+            .whereLayer("Application")
+            .mayOnlyBeAccessedByLayers("Infrastructure")
+            .whereLayer("Domain")
+            .mayOnlyBeAccessedByLayers("Application", "Infrastructure");
 
     @ArchTest
     static final ArchRule NO_PACKAGE_CYCLES = slices().matching("com.solidariaplus.identity.identityaccess.(*)..")
