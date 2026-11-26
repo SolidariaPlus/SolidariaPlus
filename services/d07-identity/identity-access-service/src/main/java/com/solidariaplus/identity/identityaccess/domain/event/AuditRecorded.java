@@ -1,6 +1,7 @@
 package com.solidariaplus.identity.identityaccess.domain.event;
 
 import com.solidariaplus.identity.identityaccess.domain.model.vo.SubjectId;
+import com.solidariaplus.identity.identityaccess.domain.service.Uuids;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -21,6 +22,7 @@ public record AuditRecorded(
         ACCOUNT_LOCKED,
         ACCOUNT_ACTIVATED,
         ACTIVATION_CODE_ISSUED,
+        MFA_ENROLLED,
         SESSION_REVOKED,
         STAFF_AUTHENTICATOR_RESET
     }
@@ -39,6 +41,6 @@ public record AuditRecorded(
             String entityId,
             Outcome outcome,
             Instant now) {
-        return new AuditRecorded(UUID.randomUUID(), action, actorSub, actorRole, entityType, entityId, outcome, now);
+        return new AuditRecorded(Uuids.v7(), action, actorSub, actorRole, entityType, entityId, outcome, now);
     }
 }

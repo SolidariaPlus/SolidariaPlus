@@ -1,2 +1,4 @@
 # identity-access-service in PROD: environment-specific values only (principle E-03).
 environment: production
+env:
+  SPRING_PROFILES_ACTIVE: prod

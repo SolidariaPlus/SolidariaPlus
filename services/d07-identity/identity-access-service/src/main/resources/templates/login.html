@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Iniciar sesión · Solidaria+</title>
+</head>
+<body>
+<main>
+    <h1>Iniciar sesión</h1>
+    <p role="alert" th:if="${param.error != null and param.error[0] == 'locked'}">
+        Demasiados intentos fallidos. Vuelva a intentarlo en 15 minutos.
+    </p>
+    <p role="alert" th:if="${param.error != null and param.error[0] != 'locked'}">
+        El usuario o la contraseña no son correctos.
+    </p>
+    <p role="status" th:if="${param.activated != null}">Su cuenta está activa. Ya puede iniciar sesión.</p>
+    <form method="post" th:action="@{/login}">
+        <label>Número de socio o cuenta institucional
+            <input name="username" autocomplete="username" required>
+        </label>
+        <label>Contraseña
+            <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit">Ingresar</button>
+    </form>
+    <p><a th:href="@{/activate}">Activar mi cuenta o cambiar mi contraseña</a></p>
+</main>
+</body>
+</html>

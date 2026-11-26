@@ -1,0 +1,15 @@
+spring:
+  config:
+    import:
+      - aws-secretsmanager:/solidaria/qa/identity-access-service/db?prefix=db.
+      - aws-secretsmanager:/solidaria/qa/identity-access-service/cache?prefix=cache.
+      - aws-secretsmanager:/solidaria/qa/kafka/users/identity-access-service?prefix=kafka.
+      - aws-secretsmanager:/solidaria/qa/identity-access-service/signing-key?prefix=signing.
+      - aws-secretsmanager:/solidaria/qa/identity-access-service/ldap?prefix=ldap.
+      - aws-parameterstore:/solidaria/qa/identity-access-service/cache/?prefix=cache.
+      - aws-parameterstore:/solidaria/qa/identity-access-service/kafka/?prefix=kafka.
+      - aws-parameterstore:/solidaria/qa/identity-access-service/ldap/?prefix=ldap.
+
+solidaria:
+  clients:
+    web-origin: https://qa.solidariaplus.ec

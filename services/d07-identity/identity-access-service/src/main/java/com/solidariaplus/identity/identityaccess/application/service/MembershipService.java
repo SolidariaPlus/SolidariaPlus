@@ -3,7 +3,7 @@ package com.solidariaplus.identity.identityaccess.application.service;
 import com.solidariaplus.identity.identityaccess.application.port.in.EndMembershipUseCase;
 import com.solidariaplus.identity.identityaccess.application.port.in.RegisterMemberUseCase;
 import com.solidariaplus.identity.identityaccess.application.port.in.RevokeSessionsUseCase;
-import com.solidariaplus.identity.identityaccess.application.port.out.ProcessedEventStore;
+import com.solidariaplus.identity.identityaccess.application.port.output.ProcessedEventStore;
 import com.solidariaplus.identity.identityaccess.domain.event.SessionRevoked.Reason;
 import com.solidariaplus.identity.identityaccess.domain.model.aggregate.MemberAccount;
 import com.solidariaplus.identity.identityaccess.domain.model.aggregate.Subject;
@@ -33,7 +33,7 @@ public class MembershipService implements RegisterMemberUseCase, EndMembershipUs
 
     @Override
     public void register(RegisterMemberUseCase.Command command) {
-        if (!processedEvents.markProcessed(command.eventId())) {
+        if (!processedEvents.markProcessed(command.eventId(), "MemberAdmitted")) {
             return;
         }
         Subject subject = Subject.forMember(command.memberId());
@@ -43,7 +43,7 @@ public class MembershipService implements RegisterMemberUseCase, EndMembershipUs
 
     @Override
     public void end(EndMembershipUseCase.Command command) {
-        if (!processedEvents.markProcessed(command.eventId())) {
+        if (!processedEvents.markProcessed(command.eventId(), "MembershipEnded")) {
             return;
         }
         accounts.findById(command.memberId()).ifPresent(account -> {

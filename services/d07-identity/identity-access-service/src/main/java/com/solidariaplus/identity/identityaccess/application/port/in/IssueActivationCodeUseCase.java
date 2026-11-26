@@ -8,5 +8,5 @@ import java.util.UUID;
 public interface IssueActivationCodeUseCase {
     IssuedCode issue(MemberId memberId, SubjectId tellerSub);
 
-    record IssuedCode(UUID activationCodeId, MemberId memberId, String code, Instant issuedAt, Instant expiresAt) {}
+    record IssuedCode(UUID activationCodeId, UUID memberId, String code, Instant issuedAt, Instant expiresAt) {}
 }

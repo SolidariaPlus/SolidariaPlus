@@ -1,0 +1,52 @@
+spring:
+  config:
+    import:
+      - aws-secretsmanager:/solidaria/local/identity-access-service/db?prefix=db.
+      - aws-secretsmanager:/solidaria/local/identity-access-service/cache?prefix=cache.
+      - aws-secretsmanager:/solidaria/local/kafka/users/identity-access-service?prefix=kafka.
+      - aws-secretsmanager:/solidaria/local/identity-access-service/signing-key?prefix=signing.
+      - aws-secretsmanager:/solidaria/local/identity-access-service/field-encryption-key?prefix=encryption.
+      - aws-secretsmanager:/solidaria/local/identity-access-service/directory?prefix=directory.
+  cloud:
+    aws:
+      endpoint: http://localhost:4566
+      region:
+        static: us-west-2
+      credentials:
+        access-key: localstack
+        secret-key: localstack
+  datasource:
+    url: jdbc:postgresql://localhost:5432/identity_access
+    username: ${db.username}
+    password: ${db.password}
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      username: ${cache.username}
+      password: ${cache.password}
+  kafka:
+    bootstrap-servers: localhost:9094
+    security:
+      protocol: SASL_PLAINTEXT
+
+server:
+  servlet:
+    session:
+      cookie:
+        secure: false
+
+solidaria:
+  clients:
+    web-origin: http://localhost:5173
+  encryption:
+    local-key: ${encryption.aesKey}
+  directory:
+    local-password: ${directory.password}
+    local-accounts:
+      "[ana.prue01]": [sp-tellers]
+      "[luis.fict02]": [sp-tellers]
+      "[fernanda.prue19]": [sp-board, sp-board-president]
+      "[esteban.fict20]": [sp-board, sp-compliance-delegate]

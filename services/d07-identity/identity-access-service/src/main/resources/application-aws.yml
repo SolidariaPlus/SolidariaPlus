@@ -1,0 +1,24 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${db.host}:${db.port}/${db.dbname}?sslmode=require
+    username: ${db.username}
+    password: ${db.password}
+  data:
+    redis:
+      host: ${cache.host}
+      port: ${cache.port}
+      username: ${cache.username}
+      password: ${cache.password}
+      ssl:
+        enabled: true
+  kafka:
+    bootstrap-servers: ${kafka.bootstrap-servers}
+  ldap:
+    urls: ${ldap.url}
+    base: OU=Staff,DC=ad,DC=solidaria,DC=internal
+    username: ${ldap.username}
+    password: ${ldap.password}
+
+solidaria:
+  encryption:
+    kms-key-id: ${KMS_KEY_ARN}

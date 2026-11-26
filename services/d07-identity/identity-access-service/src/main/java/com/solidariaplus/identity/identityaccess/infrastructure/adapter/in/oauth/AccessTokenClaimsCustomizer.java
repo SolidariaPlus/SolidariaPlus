@@ -1,15 +1,14 @@
 package com.solidariaplus.identity.identityaccess.infrastructure.adapter.in.oauth;
 
-import static com.solidariaplus.identity.identityaccess.infrastructure.adapter.in.oauth.SignInAuthenticationProvider.FUNCTION_PREFIX;
-import static com.solidariaplus.identity.identityaccess.infrastructure.adapter.in.oauth.SignInAuthenticationProvider.ROLE_PREFIX;
-
-import com.solidariaplus.identity.identityaccess.application.port.in.ResolveMemberIdUseCase;
+import com.solidariaplus.identity.identityaccess.application.port.in.TokenClaimsUseCase;
+import com.solidariaplus.identity.identityaccess.application.port.in.TokenClaimsUseCase.Claims;
 import com.solidariaplus.identity.identityaccess.domain.model.vo.SubjectId;
+import com.solidariaplus.identity.identityaccess.infrastructure.adapter.in.web.SignInSession;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
@@ -20,14 +19,15 @@ import org.springframework.stereotype.Component;
 class AccessTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncodingContext> {
     private static final String AUDIENCE = "solidaria-api";
 
-    private final ResolveMemberIdUseCase members;
+    private final TokenClaimsUseCase tokenClaims;
 
-    AccessTokenClaimsCustomizer(ResolveMemberIdUseCase members) {
-        this.members = members;
+    AccessTokenClaimsCustomizer(TokenClaimsUseCase tokenClaims) {
+        this.tokenClaims = tokenClaims;
     }
 
     @Override
     public void customize(JwtEncodingContext context) {
+        context.getJwsHeader().algorithm(SignatureAlgorithm.ES256);
         if (!OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
             return;
         }
@@ -37,22 +37,20 @@ class AccessTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncodingCo
             return;
         }
         Authentication principal = context.getPrincipal();
-        claims.claim("roles", authoritiesWithPrefix(principal, ROLE_PREFIX))
-                .claim("amr", List.of("pwd"))
+        Claims subject = tokenClaims.claimsOf(new SubjectId(UUID.fromString(principal.getName())));
+        claims.claim("roles", List.copyOf(subject.roles()))
+                .claim("amr", authenticationMethods(principal))
                 .claim("sid", context.getAuthorization().getId());
-        List<String> functions = authoritiesWithPrefix(principal, FUNCTION_PREFIX);
-        if (!functions.isEmpty()) {
-            claims.claim("fn", functions);
+        if (!subject.functions().isEmpty()) {
+            claims.claim("fn", List.copyOf(subject.functions()));
         }
-        members.memberIdOf(new SubjectId(UUID.fromString(principal.getName())))
+        subject.memberId()
                 .ifPresent(memberId -> claims.claim("mid", memberId.value().toString()));
     }
 
-    private static List<String> authoritiesWithPrefix(Authentication principal, String prefix) {
-        return principal.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .filter(authority -> authority.startsWith(prefix))
-                .map(authority -> authority.substring(prefix.length()))
-                .toList();
+    private static List<String> authenticationMethods(Authentication principal) {
+        boolean secondFactor = principal.getAuthorities().stream()
+                .anyMatch(authority -> SignInSession.SECOND_FACTOR_AUTHORITY.equals(authority.getAuthority()));
+        return secondFactor ? List.of("pwd", "otp", "mfa") : List.of("pwd");
     }
 }

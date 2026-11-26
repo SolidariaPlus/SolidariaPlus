@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Verificación · Solidaria+</title>
+</head>
+<body>
+<main>
+    <h1>Verificación en dos pasos</h1>
+    <section th:if="${enrol}">
+        <p>Agregue esta cuenta en su aplicación autenticadora con la clave o el enlace siguientes:</p>
+        <p><code th:text="${secret}"></code></p>
+        <p><a th:href="${otpauthUri}">Abrir en la aplicación autenticadora</a></p>
+    </section>
+    <p role="alert" th:if="${error == 'AUTH_ACCOUNT_LOCKED'}">
+        Demasiados intentos fallidos. Vuelva a intentarlo en 15 minutos.
+    </p>
+    <p role="alert" th:if="${error == 'AUTH_MFA_REQUIRED'}">El código no es correcto. Intente de nuevo.</p>
+    <form method="post" th:action="@{/mfa}">
+        <label>Código de la aplicación autenticadora
+            <input name="otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" required>
+        </label>
+        <button type="submit">Verificar</button>
+    </form>
+</main>
+</body>
+</html>

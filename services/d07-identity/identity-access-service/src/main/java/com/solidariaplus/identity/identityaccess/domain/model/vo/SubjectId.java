@@ -1,5 +1,6 @@
 package com.solidariaplus.identity.identityaccess.domain.model.vo;
 
+import com.solidariaplus.identity.identityaccess.domain.service.Uuids;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -9,6 +10,6 @@ public record SubjectId(UUID value) {
     }
 
     public static SubjectId generate() {
-        return new SubjectId(UUID.randomUUID());
+        return new SubjectId(Uuids.v7());
     }
 }

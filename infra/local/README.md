@@ -48,6 +48,9 @@ docker compose --profile identity down -v              # stop and drop the data 
   together with the absence of the obsolete `version` key (`ci.yml`, job `compose`).
 - The one-shot provisioners (`postgres-provisioner`, `kafka-provisioner`, `rabbitmq-provisioner`) stay
   up and idle after they finish, so that `up --wait` and the health-check rule apply to them too.
+- Local RabbitMQ authenticates with the internal backend only (`rabbitmq/30-local-oauth.conf`):
+  RabbitMQ 4.1+ rejects a non-https `auth_oauth2.jwks_url`, and MS-17 serves plain HTTP on localhost.
+  The OAuth 2.0 backend is enabled once MS-17 issues tokens (KAN-18) behind an https endpoint.
 - Provisioning is idempotent: it runs at every `up` and only creates what is missing.
 - Secret and parameter names follow the cloud pattern `/solidaria/<env>/<service>/<kind>`, with
   `<env> = local`.

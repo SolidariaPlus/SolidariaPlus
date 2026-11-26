@@ -2,8 +2,10 @@ package com.solidariaplus.identity.identityaccess;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 @SpringBootApplication
+@ConfigurationPropertiesScan
 public class IdentityAccessApplication {
 
     public static void main(String[] args) {

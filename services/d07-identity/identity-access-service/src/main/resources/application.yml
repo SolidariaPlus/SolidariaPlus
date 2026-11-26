@@ -1,28 +1,118 @@
 spring:
   application:
     name: identity-access-service
+  profiles:
+    group:
+      qa: aws
+      prod: aws
+  flyway:
+    enabled: false
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
     client-id: identity-access-service
     security:
-      protocol: ${KAFKA_SECURITY_PROTOCOL:SASL_PLAINTEXT}
+      protocol: SASL_SSL
     properties:
       sasl.mechanism: SCRAM-SHA-512
-      sasl.jaas.config: org.apache.kafka.common.security.scram.ScramLoginModule required username="${KAFKA_USERNAME:identity-access-service}" password="${KAFKA_PASSWORD}";
+      sasl.jaas.config: org.apache.kafka.common.security.scram.ScramLoginModule required username="identity-access-service" password="${kafka.identity-access-service}";
     consumer:
       group-id: identity-access-service
       auto-offset-reset: earliest
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+  security:
+    oauth2:
+      authorizationserver:
+        client:
+          solidaria-web:
+            registration:
+              client-id: solidaria-web
+              client-authentication-methods: [none]
+              authorization-grant-types: [authorization_code, refresh_token]
+              redirect-uris: ["${solidaria.clients.web-origin}/auth/callback"]
+              scopes: [openid, offline_access]
+            require-proof-key: true
+            token:
+              access-token-time-to-live: 10m
+              refresh-token-time-to-live: 12h
+              reuse-refresh-tokens: false
+              id-token-signature-algorithm: ES256
+          solidaria-mobile:
+            registration:
+              client-id: solidaria-mobile
+              client-authentication-methods: [none]
+              authorization-grant-types: [authorization_code, refresh_token]
+              redirect-uris: ["ec.solidariaplus.mobile:/oauth2/callback"]
+              scopes: [openid, offline_access]
+            require-proof-key: true
+            token:
+              access-token-time-to-live: 10m
+              refresh-token-time-to-live: 30d
+              reuse-refresh-tokens: false
+              id-token-signature-algorithm: ES256
+          solidaria-desktop:
+            registration:
+              client-id: solidaria-desktop
+              client-authentication-methods: [none]
+              authorization-grant-types: [authorization_code, refresh_token]
+              redirect-uris: ["http://127.0.0.1/callback"]
+              scopes: [openid, offline_access]
+            require-proof-key: true
+            token:
+              access-token-time-to-live: 10m
+              refresh-token-time-to-live: 10h
+              reuse-refresh-tokens: false
+              id-token-signature-algorithm: ES256
 
 server:
   port: ${SERVER_PORT:8097}
   forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        secure: true
+        same-site: lax
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,prometheus
   endpoint:
     health:
       probes:
         enabled: true
+      group:
+        readiness:
+          include: readinessState,db
+  health:
+    redis:
+      enabled: false
+    ldap:
+      enabled: false
+  observations:
+    key-values:
+      service: identity-access-service
+
+logging:
+  structured:
+    format:
+      console: ecs
+
+sentry:
+  dsn: ${SENTRY_DSN:}
+  traces-sample-rate: 0
+  send-default-pii: false
+
+solidaria:
+  cache:
+    key-prefix: ${cache.keyPrefix}
+  directory:
+    groups:
+      sp-tellers: { role: TELLER }
+      sp-board: { role: BOARD }
+      sp-board-president: { role: BOARD, function: PRESIDENT }
+      sp-compliance-delegate: { role: BOARD, function: COMPLIANCE }
+      sp-accountants: { role: ACCOUNTANT }
+      sp-external-consultants: { role: EXTERNAL_CONSULTANT }

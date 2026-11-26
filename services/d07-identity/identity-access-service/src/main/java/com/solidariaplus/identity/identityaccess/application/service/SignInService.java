@@ -1,12 +1,11 @@
 package com.solidariaplus.identity.identityaccess.application.service;
 
-import com.solidariaplus.identity.identityaccess.application.port.in.ResolveMemberIdUseCase;
 import com.solidariaplus.identity.identityaccess.application.port.in.SignInUseCase;
-import com.solidariaplus.identity.identityaccess.application.port.out.DirectoryGateway;
-import com.solidariaplus.identity.identityaccess.application.port.out.DirectoryGateway.DirectoryIdentity;
-import com.solidariaplus.identity.identityaccess.application.port.out.EventPublisher;
-import com.solidariaplus.identity.identityaccess.application.port.out.LoginAttemptStore;
-import com.solidariaplus.identity.identityaccess.application.port.out.PasswordHasher;
+import com.solidariaplus.identity.identityaccess.application.port.output.DirectoryGateway;
+import com.solidariaplus.identity.identityaccess.application.port.output.DirectoryGateway.DirectoryIdentity;
+import com.solidariaplus.identity.identityaccess.application.port.output.EventPublisher;
+import com.solidariaplus.identity.identityaccess.application.port.output.LoginAttemptStore;
+import com.solidariaplus.identity.identityaccess.application.port.output.PasswordHasher;
 import com.solidariaplus.identity.identityaccess.domain.event.AuditRecorded;
 import com.solidariaplus.identity.identityaccess.domain.event.AuditRecorded.Action;
 import com.solidariaplus.identity.identityaccess.domain.event.AuditRecorded.Outcome;
@@ -15,7 +14,6 @@ import com.solidariaplus.identity.identityaccess.domain.exception.ErrorCode;
 import com.solidariaplus.identity.identityaccess.domain.model.aggregate.MemberAccount;
 import com.solidariaplus.identity.identityaccess.domain.model.aggregate.StaffProfile;
 import com.solidariaplus.identity.identityaccess.domain.model.aggregate.Subject;
-import com.solidariaplus.identity.identityaccess.domain.model.vo.MemberId;
 import com.solidariaplus.identity.identityaccess.domain.model.vo.MemberNumber;
 import com.solidariaplus.identity.identityaccess.domain.model.vo.SubjectId;
 import com.solidariaplus.identity.identityaccess.domain.repository.MemberAccountRepository;
@@ -25,15 +23,12 @@ import com.solidariaplus.identity.identityaccess.domain.service.LockoutPolicy;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Optional;
-import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Transactional
-public class SignInService implements SignInUseCase, ResolveMemberIdUseCase {
-    private static final String MEMBER_ROLE = "MEMBER";
-
+public class SignInService implements SignInUseCase {
     private final SubjectRepository subjects;
     private final MemberAccountRepository accounts;
     private final StaffProfileRepository staffProfiles;
@@ -63,62 +58,47 @@ public class SignInService implements SignInUseCase, ResolveMemberIdUseCase {
     }
 
     @Override
-    public AuthenticatedSubject signIn(String username, String password) {
+    public SubjectId signIn(String username, String password) {
         if (attempts.isLocked(username)) {
             throw new DomainException(ErrorCode.AUTH_ACCOUNT_LOCKED);
         }
         Instant now = clock.instant();
-        Optional<AuthenticatedSubject> subject = MemberNumber.isMemberNumber(username)
+        Optional<SubjectId> subject = MemberNumber.isMemberNumber(username)
                 ? authenticateMember(new MemberNumber(username), password)
                 : authenticateStaff(username, password, now);
-        return subject.map(authenticated -> succeed(username, authenticated, now))
-                .orElseThrow(() -> fail(username));
+        return subject.map(sub -> succeed(username, sub, now)).orElseThrow(() -> fail(username));
     }
 
-    @Override
-    @Transactional(readOnly = true)
-    public Optional<MemberId> memberIdOf(SubjectId sub) {
-        return subjects.findById(sub).flatMap(Subject::getMemberId);
-    }
-
-    private Optional<AuthenticatedSubject> authenticateMember(MemberNumber memberNumber, String password) {
+    private Optional<SubjectId> authenticateMember(MemberNumber memberNumber, String password) {
         return accounts.findByMemberNumber(memberNumber)
                 .filter(MemberAccount::canSignIn)
                 .filter(account -> account.getPasswordHash()
                         .filter(hash -> hasher.matches(password, hash))
                         .isPresent())
-                .map(account -> new AuthenticatedSubject(account.getSub(), Set.of(MEMBER_ROLE), Set.of()));
+                .map(MemberAccount::getSub);
     }
 
-    private Optional<AuthenticatedSubject> authenticateStaff(String username, String password, Instant now) {
+    private Optional<SubjectId> authenticateStaff(String username, String password, Instant now) {
         return directory.authenticate(username, password).flatMap(identity -> {
             StaffProfile profile =
                     staffProfiles.findByDirectoryAccount(identity.account()).orElseGet(() -> registerStaff(identity));
-            profile.syncRoles(identity.roles());
+            profile.syncDirectory(identity.roles(), identity.functions());
             staffProfiles.save(profile);
-            return Optional.of(new AuthenticatedSubject(profile.getSub(), identity.roles(), identity.functions()))
-                    .filter(authenticated -> profile.canAuthenticate(now));
+            return Optional.of(profile.getSub()).filter(sub -> profile.canAuthenticate(now));
         });
     }
 
     private StaffProfile registerStaff(DirectoryIdentity identity) {
         Subject subject = Subject.forStaff();
         subjects.save(subject);
-        return new StaffProfile(subject.getSub(), identity.account(), identity.roles());
+        return new StaffProfile(subject.getSub(), identity.account(), identity.roles(), identity.functions());
     }
 
-    private AuthenticatedSubject succeed(String username, AuthenticatedSubject subject, Instant now) {
+    private SubjectId succeed(String username, SubjectId sub, Instant now) {
         attempts.clear(username);
-        String sub = subject.sub().value().toString();
         events.publish(AuditRecorded.of(
-                Action.SIGN_IN,
-                subject.sub(),
-                String.join(",", subject.roles()),
-                "Subject",
-                sub,
-                Outcome.SUCCESS,
-                now));
-        return subject;
+                Action.SIGN_IN, sub, "SUBJECT", "Subject", sub.value().toString(), Outcome.SUCCESS, now));
+        return sub;
     }
 
     private DomainException fail(String username) {

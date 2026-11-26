@@ -4,6 +4,7 @@ import com.solidariaplus.identity.identityaccess.domain.model.entity.RefreshToke
 import com.solidariaplus.identity.identityaccess.domain.model.vo.SessionId;
 import com.solidariaplus.identity.identityaccess.domain.model.vo.SubjectId;
 import com.solidariaplus.identity.identityaccess.domain.model.vo.TokenHash;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
@@ -15,8 +16,8 @@ public final class Session {
     private final Instant createdAt;
     private Instant revokedAt;
 
-    public static Session start(SubjectId sub, TokenHash initialRefreshTokenHash, Instant now) {
-        return new Session(SessionId.generate(), sub, RefreshTokenFamily.create(initialRefreshTokenHash), now, null);
+    public static Session start(SessionId sessionId, SubjectId sub, TokenHash initialRefreshTokenHash, Instant now) {
+        return new Session(sessionId, sub, RefreshTokenFamily.create(initialRefreshTokenHash), now, null);
     }
 
     public static Session reconstitute(
@@ -33,21 +34,21 @@ public final class Session {
         this.revokedAt = revokedAt;
     }
 
-    public boolean rotateRefreshToken(TokenHash presentedHash, TokenHash nextHash, Instant now) {
-        if (isRevoked()) {
-            return false;
-        }
-        boolean rotated = tokenFamily.rotate(presentedHash, nextHash);
-        if (!rotated) {
-            revoke(now);
-            return false;
-        }
-        return true;
+    public boolean isReuse(TokenHash presentedHash) {
+        return !tokenFamily.isCurrent(presentedHash);
+    }
+
+    public void rotateRefreshToken(TokenHash nextHash) {
+        tokenFamily.rotate(nextHash);
+    }
+
+    public boolean isActive(Instant now, Duration maxLifetime) {
+        return !isRevoked() && now.isBefore(createdAt.plus(maxLifetime));
     }
 
     public void revoke(Instant now) {
-        if (this.revokedAt == null) {
-            this.revokedAt = Objects.requireNonNull(now, "now cannot be null");
+        if (revokedAt == null) {
+            revokedAt = Objects.requireNonNull(now, "now cannot be null");
         }
     }
 

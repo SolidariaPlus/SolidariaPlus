@@ -2,7 +2,7 @@ package com.solidariaplus.identity.identityaccess.application.service;
 
 import com.solidariaplus.identity.identityaccess.application.port.in.ResetStaffAuthenticatorUseCase;
 import com.solidariaplus.identity.identityaccess.application.port.in.RevokeSessionsUseCase;
-import com.solidariaplus.identity.identityaccess.application.port.out.EventPublisher;
+import com.solidariaplus.identity.identityaccess.application.port.output.EventPublisher;
 import com.solidariaplus.identity.identityaccess.domain.event.AuditRecorded;
 import com.solidariaplus.identity.identityaccess.domain.event.AuditRecorded.Action;
 import com.solidariaplus.identity.identityaccess.domain.event.AuditRecorded.Outcome;

@@ -3,6 +3,7 @@ package com.solidariaplus.identity.identityaccess.domain.model.entity;
 import com.solidariaplus.identity.identityaccess.domain.exception.DomainException;
 import com.solidariaplus.identity.identityaccess.domain.exception.ErrorCode;
 import com.solidariaplus.identity.identityaccess.domain.model.vo.Argon2Hash;
+import com.solidariaplus.identity.identityaccess.domain.service.Uuids;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
@@ -19,7 +20,7 @@ public final class ActivationCode {
 
     public static ActivationCode issue(Argon2Hash codeHash, Instant createdAt) {
         Objects.requireNonNull(createdAt, "createdAt cannot be null");
-        return new ActivationCode(UUID.randomUUID(), codeHash, createdAt, createdAt.plus(VALIDITY_WINDOW), false);
+        return new ActivationCode(Uuids.v7(), codeHash, createdAt, createdAt.plus(VALIDITY_WINDOW), false);
     }
 
     public static ActivationCode reconstitute(

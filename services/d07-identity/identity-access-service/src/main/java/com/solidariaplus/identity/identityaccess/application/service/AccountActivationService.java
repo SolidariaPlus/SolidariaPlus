@@ -2,8 +2,8 @@ package com.solidariaplus.identity.identityaccess.application.service;
 
 import com.solidariaplus.identity.identityaccess.application.port.in.ActivateAccountUseCase;
 import com.solidariaplus.identity.identityaccess.application.port.in.IssueActivationCodeUseCase;
-import com.solidariaplus.identity.identityaccess.application.port.out.EventPublisher;
-import com.solidariaplus.identity.identityaccess.application.port.out.PasswordHasher;
+import com.solidariaplus.identity.identityaccess.application.port.output.EventPublisher;
+import com.solidariaplus.identity.identityaccess.application.port.output.PasswordHasher;
 import com.solidariaplus.identity.identityaccess.domain.event.AuditRecorded;
 import com.solidariaplus.identity.identityaccess.domain.event.AuditRecorded.Action;
 import com.solidariaplus.identity.identityaccess.domain.event.AuditRecorded.Outcome;
@@ -19,6 +19,7 @@ import com.solidariaplus.identity.identityaccess.domain.service.ActivationCodeGe
 import com.solidariaplus.identity.identityaccess.domain.service.PasswordPolicy;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,13 +50,15 @@ public class AccountActivationService implements IssueActivationCodeUseCase, Act
         ActivationCode issued = account.issueActivationCode(hasher.hash(code), now);
         accounts.save(account);
         audit(Action.ACTIVATION_CODE_ISSUED, tellerSub, "TELLER", memberId, now);
-        return new IssuedCode(issued.getCodeId(), memberId, code, issued.getCreatedAt(), issued.getExpiresAt());
+        return new IssuedCode(issued.getCodeId(), memberId.value(), code, issued.getCreatedAt(), issued.getExpiresAt());
     }
 
     @Override
     public void activate(ActivateAccountUseCase.Command command) {
         PasswordPolicy.validate(command.newPassword());
-        MemberAccount account = accounts.findByMemberNumber(new MemberNumber(command.memberNumber()))
+        MemberAccount account = Optional.of(command.memberNumber())
+                .filter(MemberNumber::isMemberNumber)
+                .flatMap(number -> accounts.findByMemberNumber(new MemberNumber(number)))
                 .filter(candidate -> candidate
                         .getActiveCode()
                         .filter(code -> hasher.matches(command.activationCode(), code.getCodeHash()))

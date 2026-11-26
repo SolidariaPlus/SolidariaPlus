@@ -1,38 +1,33 @@
 package com.solidariaplus.identity.identityaccess.domain.model.entity;
 
 import com.solidariaplus.identity.identityaccess.domain.model.vo.TokenHash;
+import com.solidariaplus.identity.identityaccess.domain.service.Uuids;
 import java.util.Objects;
 import java.util.UUID;
 
 public final class RefreshTokenFamily {
     private final UUID familyId;
     private TokenHash currentTokenHash;
-    private boolean compromised;
 
     public static RefreshTokenFamily create(TokenHash initialTokenHash) {
-        return new RefreshTokenFamily(UUID.randomUUID(), initialTokenHash, false);
+        return new RefreshTokenFamily(Uuids.v7(), initialTokenHash);
     }
 
-    public static RefreshTokenFamily reconstitute(UUID familyId, TokenHash currentTokenHash, boolean compromised) {
-        return new RefreshTokenFamily(familyId, currentTokenHash, compromised);
+    public static RefreshTokenFamily reconstitute(UUID familyId, TokenHash currentTokenHash) {
+        return new RefreshTokenFamily(familyId, currentTokenHash);
     }
 
-    private RefreshTokenFamily(UUID familyId, TokenHash currentTokenHash, boolean compromised) {
+    private RefreshTokenFamily(UUID familyId, TokenHash currentTokenHash) {
         this.familyId = Objects.requireNonNull(familyId, "familyId cannot be null");
         this.currentTokenHash = Objects.requireNonNull(currentTokenHash, "currentTokenHash cannot be null");
-        this.compromised = compromised;
     }
 
-    public boolean rotate(TokenHash presentedHash, TokenHash nextTokenHash) {
-        Objects.requireNonNull(presentedHash, "presentedHash cannot be null");
-        Objects.requireNonNull(nextTokenHash, "nextTokenHash cannot be null");
+    public boolean isCurrent(TokenHash presentedHash) {
+        return currentTokenHash.equals(presentedHash);
+    }
 
-        if (compromised || !currentTokenHash.equals(presentedHash)) {
-            this.compromised = true;
-            return false;
-        }
-        this.currentTokenHash = nextTokenHash;
-        return true;
+    public void rotate(TokenHash nextTokenHash) {
+        this.currentTokenHash = Objects.requireNonNull(nextTokenHash, "nextTokenHash cannot be null");
     }
 
     public UUID getFamilyId() {
@@ -41,9 +36,5 @@ public final class RefreshTokenFamily {
 
     public TokenHash getCurrentTokenHash() {
         return currentTokenHash;
-    }
-
-    public boolean isCompromised() {
-        return compromised;
     }
 }
