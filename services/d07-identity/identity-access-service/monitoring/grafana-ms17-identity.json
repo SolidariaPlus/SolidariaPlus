@@ -1,0 +1,140 @@
+{
+  "__inputs": [],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "11.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" }
+  ],
+  "annotations": { "list": [] },
+  "description": "MS-17 identity-access-service — sign-in throughput, token latency, lockouts and session revocations",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "title": "Sign-ins / min",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(identity_signin_total{outcome=\"success\",service=\"identity-access-service\"}[1m]) * 60",
+          "legendFormat": "success"
+        }
+      ]
+    },
+    {
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "title": "Sign-in failures / min",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(identity_signin_total{outcome=\"failure\",service=\"identity-access-service\"}[1m]) * 60",
+          "legendFormat": "failure"
+        }
+      ]
+    },
+    {
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "title": "Lockouts / min",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(identity_signin_total{outcome=\"locked\",service=\"identity-access-service\"}[1m]) * 60",
+          "legendFormat": "locked"
+        }
+      ]
+    },
+    {
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "title": "Session revocations / min",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "rate(identity_session_revocations_total{service=\"identity-access-service\"}[1m]) * 60",
+          "legendFormat": "revocations"
+        }
+      ]
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 200 },
+              { "color": "red", "value": 300 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "id": 5,
+      "options": { "tooltip": { "mode": "multi" } },
+      "title": "Token issuance latency (p50 / p95 / p99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(identity_token_issuance_seconds_bucket{service=\"identity-access-service\"}[5m])) * 1000",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(identity_token_issuance_seconds_bucket{service=\"identity-access-service\"}[5m])) * 1000",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(identity_token_issuance_seconds_bucket{service=\"identity-access-service\"}[5m])) * 1000",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "fieldConfig": { "defaults": { "unit": "reqps" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "id": 6,
+      "title": "Sign-in rate by outcome",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(identity_signin_total{service=\"identity-access-service\"}[5m])",
+          "legendFormat": "{{outcome}}"
+        }
+      ]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["identity", "ms-17", "oauth2"],
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "MS-17 Identity Access Service",
+  "uid": "ms17-identity",
+  "version": 1
+}

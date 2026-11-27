@@ -1,0 +1,51 @@
+groups:
+  - name: ms17-identity-access-service
+    interval: 1m
+    rules:
+      - alert: IdentityTokenLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            rate(identity_token_issuance_seconds_bucket{service="identity-access-service"}[5m])
+          ) > 0.3
+        for: 5m
+        labels:
+          severity: warning
+          service: identity-access-service
+        annotations:
+          summary: "MS-17 token issuance p95 > 300 ms"
+          description: "p95 token issuance latency is {{ $value | humanizeDuration }} over the last 5 minutes."
+
+      - alert: IdentitySignInBurst
+        expr: |
+          rate(identity_signin_total{outcome="failure",service="identity-access-service"}[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+          service: identity-access-service
+        annotations:
+          summary: "MS-17 high failed sign-in rate"
+          description: "Failed sign-ins exceed 5/s for 2 consecutive minutes — possible credential-stuffing attack."
+
+      - alert: IdentityLockoutBurst
+        expr: |
+          rate(identity_signin_total{outcome="locked",service="identity-access-service"}[5m]) > 1
+        for: 1m
+        labels:
+          severity: warning
+          service: identity-access-service
+        annotations:
+          summary: "MS-17 account lockout burst"
+          description: "Account lockouts exceed 1/s — investigate automated attack pattern."
+
+      - alert: IdentityServiceDown
+        expr: |
+          absent(up{job="identity-access-service"}) == 1
+            or
+          up{job="identity-access-service"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: identity-access-service
+        annotations:
+          summary: "MS-17 identity-access-service is unreachable"
+          description: "No healthy instance of identity-access-service has been scraped for 2 minutes."
