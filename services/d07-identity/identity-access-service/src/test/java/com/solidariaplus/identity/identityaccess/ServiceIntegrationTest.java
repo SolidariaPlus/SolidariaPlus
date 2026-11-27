@@ -37,11 +37,15 @@ public abstract class ServiceIntegrationTest {
     @DynamicPropertySource
     static void generatedKeys(DynamicPropertyRegistry registry) throws GeneralSecurityException {
         KeyPair signing = ecKeyPair();
+        KeyPair previous = ecKeyPair();
         byte[] fieldKey = new byte[32];
         new SecureRandom().nextBytes(fieldKey);
-        registry.add("signing.kid", () -> "test");
+        registry.add("signing.kid", () -> "test-current");
         registry.add("signing.privateKey", () -> encode(signing.getPrivate().getEncoded()));
         registry.add("signing.publicKey", () -> encode(signing.getPublic().getEncoded()));
+        registry.add("signing.previous-kid", () -> "test-previous");
+        registry.add(
+                "signing.previous-publicKey", () -> encode(previous.getPublic().getEncoded()));
         registry.add("solidaria.encryption.local-key", () -> encode(fieldKey));
     }
 
