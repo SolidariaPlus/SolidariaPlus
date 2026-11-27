@@ -1,0 +1,2563 @@
+{
+  "info": {
+    "name": "identity-access-service (MS-17) local",
+    "description": [
+      "Functional tests of identity-access-service (MS-17) on localhost:8097.",
+      "",
+      "Before running:",
+      "1. docker compose --profile identity up -d --wait",
+      "2. SPRING_PROFILES_ACTIVE=local ./gradlew :identity-access-service:bootRun",
+      "3. Publish MemberAdmitted for {{memberId}} / {{memberNumber}} (see folder \"00 Setup\").",
+      "4. Set the collection variable staffPassword to STAFF_LOCAL_PASSWORD of your .env (default local-staff-password).",
+      "",
+      "Run the folders in order (Collection Runner or newman). The sign-in folders automate the authorization",
+      "code flow with PKCE, the form login with CSRF and the TOTP step: no browser is needed. Requests disable",
+      "Postman's cookie jar and redirect following; the session cookie travels in {{sessionCookie}}.",
+      "",
+      "TOTP secrets of staff accounts are created on their first sign-in and kept in the collection variables",
+      "tellerTotpSecret and boardTotpSecret. Do not clear them: without them the account can only sign in again after",
+      "an authenticator reset or after 'docker compose --profile identity down -v'."
+    ],
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Keeps the session cookie and the redirect target of every response.",
+          "const setCookie = pm.response.headers.filter((h) => h.key.toLowerCase() === \"set-cookie\").map((h) => h.value);",
+          "const session = setCookie.map((c) => c.match(/^JSESSIONID=([^;]+)/)).find(Boolean);",
+          "if (session) pm.collectionVariables.set(\"sessionCookie\", session[1]);",
+          "pm.collectionVariables.set(\"location\", pm.response.headers.get(\"Location\") || \"\");"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8097",
+      "type": "string"
+    },
+    {
+      "key": "clientId",
+      "value": "solidaria-web",
+      "type": "string"
+    },
+    {
+      "key": "redirectUri",
+      "value": "http://localhost:5173/auth/callback",
+      "type": "string"
+    },
+    {
+      "key": "staffPassword",
+      "value": "local-staff-password",
+      "type": "string"
+    },
+    {
+      "key": "tellerUser",
+      "value": "ana.prue01",
+      "type": "string"
+    },
+    {
+      "key": "boardUser",
+      "value": "fernanda.prue19",
+      "type": "string"
+    },
+    {
+      "key": "memberId",
+      "value": "0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a90",
+      "type": "string"
+    },
+    {
+      "key": "memberNumber",
+      "value": "000123",
+      "type": "string"
+    },
+    {
+      "key": "memberPassword",
+      "value": "Solidaria2026!x",
+      "type": "string"
+    },
+    {
+      "key": "lockoutProbe",
+      "value": "9999999999",
+      "type": "string"
+    },
+    {
+      "key": "unknownMemberId",
+      "value": "00000000-0000-7000-8000-000000000000",
+      "type": "string"
+    },
+    {
+      "key": "tellerTotpSecret",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "boardTotpSecret",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tellerAccessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tellerRefreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "boardAccessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "boardRefreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "memberAccessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "memberRefreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "memberPreviousRefreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "activationCode",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "codeVerifier",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "codeChallenge",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "state",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "authorizationCode",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sessionCookie",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "csrf",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "otp",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "location",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "nextUrl",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lockoutAttempts",
+      "value": "0",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "00 Setup",
+      "description": [
+        "Members are created by the MemberAdmitted event on member-management.events (no REST endpoint).",
+        "From the repository root run 'docker compose exec kafka-provisioner bash' and inside the container:",
+        "",
+        "printf 'security.protocol=SASL_PLAINTEXT\\nsasl.mechanism=SCRAM-SHA-512\\nsasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username=\"admin\" password=\"%s\";\\n' \"$KAFKA_ADMIN_PASSWORD\" > /tmp/a.properties",
+        "",
+        "echo '{\"specversion\":\"1.0\",\"id\":\"0193a1f0-3c01-7d2e-8f3a-4b5c6d7e8f01\",\"source\":\"/services/member-management-service\",\"type\":\"ec.solidariaplus.membership.MemberAdmitted.v1\",\"datacontenttype\":\"application/json\",\"data\":{\"memberId\":\"0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a90\",\"memberNumber\":\"000123\"}}' | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server kafka:9092 --producer.config /tmp/a.properties --topic member-management.events",
+        "",
+        "For another member change id, memberId and memberNumber (1 to 10 digits) and the collection variables memberId and memberNumber."
+      ],
+      "item": []
+    },
+    {
+      "name": "01 Public endpoints",
+      "item": [
+        {
+          "name": "Health",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/actuator/health",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"UP\", () => pm.expect(pm.response.json().status).to.eql(\"UP\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Readiness",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/actuator/health/readiness",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test(\"status 200\", () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "OpenID configuration",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/.well-known/openid-configuration",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"issuer is the base URL\", () => pm.expect(pm.response.json().issuer).to.eql(pm.collectionVariables.get(\"baseUrl\")));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "JWKS",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/oauth2/jwks",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"publishes an EC P-256 key\", () => {",
+                  "  const key = pm.response.json().keys[0];",
+                  "  pm.expect(key.kty).to.eql(\"EC\");",
+                  "  pm.expect(key.crv).to.eql(\"P-256\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Prometheus metrics",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/actuator/prometheus",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test(\"status 200\", () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 Sign in: teller (TOTP)",
+      "item": [
+        {
+          "name": "Start authorization",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              }
+            ],
+            "url": "{{baseUrl}}/oauth2/authorize?response_type=code&client_id={{clientId}}&redirect_uri={{redirectUri}}&scope=openid%20offline_access&state={{state}}&code_challenge={{codeChallenge}}&code_challenge_method=S256",
+            "description": "Starts the authorization code flow with PKCE. Unauthenticated, so the server saves the request in the session and redirects to /login.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// PKCE (RFC 7636): a fresh code verifier, its S256 challenge and a state for every sign-in.",
+                  "const CJ = require(\"crypto-js\");",
+                  "const b64url = (words) => CJ.enc.Base64.stringify(words).replace(/\\+/g, \"-\").replace(/\\//g, \"_\").replace(/=+$/, \"\");",
+                  "const verifier = b64url(CJ.lib.WordArray.random(32));",
+                  "pm.collectionVariables.set(\"codeVerifier\", verifier);",
+                  "pm.collectionVariables.set(\"codeChallenge\", b64url(CJ.SHA256(verifier)));",
+                  "pm.collectionVariables.set(\"state\", b64url(CJ.lib.WordArray.random(16)));",
+                  "pm.collectionVariables.set(\"sessionCookie\", \"\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"redirects to the sign-in page\", () => {",
+                  "  pm.response.to.have.status(302);",
+                  "  pm.expect(pm.collectionVariables.get(\"location\")).to.include(\"/login\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Load sign-in page",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              },
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              }
+            ],
+            "url": "{{baseUrl}}/login",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "",
+                  "const csrf = pm.response.text().match(/name=\"_csrf\"\\s+value=\"([^\"]+)\"/);",
+                  "pm.test(\"page carries a CSRF token\", () => pm.expect(csrf, \"no _csrf input in the page\").to.not.be.null);",
+                  "if (csrf) pm.collectionVariables.set(\"csrf\", csrf[1]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Submit credentials",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "{{tellerUser}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{staffPassword}}",
+                  "type": "text"
+                },
+                {
+                  "key": "_csrf",
+                  "value": "{{csrf}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const location = pm.collectionVariables.get(\"location\");",
+                  "pm.test(\"credentials accepted\", () => {",
+                  "  pm.response.to.have.status(302);",
+                  "  pm.expect(location, \"rejected: \" + location).to.not.include(\"/login?error\");",
+                  "});",
+                  "pm.test(\"asks for the second factor\", () =>",
+                  "  pm.expect(location).to.include(\"/mfa\"));",
+                  "pm.collectionVariables.set(\"nextUrl\", location.startsWith(\"/\") ? pm.collectionVariables.get(\"baseUrl\") + location : location);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Load second-factor page",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              },
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              }
+            ],
+            "url": "{{baseUrl}}/mfa",
+            "description": "On the first sign-in the page shows a new TOTP secret (enrolment); the script keeps it in a collection variable for later sign-ins.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "",
+                  "const csrf = pm.response.text().match(/name=\"_csrf\"\\s+value=\"([^\"]+)\"/);",
+                  "pm.test(\"page carries a CSRF token\", () => pm.expect(csrf, \"no _csrf input in the page\").to.not.be.null);",
+                  "if (csrf) pm.collectionVariables.set(\"csrf\", csrf[1]);",
+                  "",
+                  "const enrol = pm.response.text().match(/<code>([A-Z2-7]+)<\\/code>/);",
+                  "if (enrol) {",
+                  "  pm.collectionVariables.set(\"tellerTotpSecret\", enrol[1]);",
+                  "  console.log(\"teller: TOTP enrolment, secret \" + enrol[1]);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Submit TOTP",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/mfa",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "otp",
+                  "value": "{{otp}}",
+                  "type": "text"
+                },
+                {
+                  "key": "_csrf",
+                  "value": "{{csrf}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// TOTP (RFC 6238): HMAC-SHA1, 30-second step, 6 digits, as RfcTotpAuthenticator.",
+                  "const CJ = require(\"crypto-js\");",
+                  "const secret = pm.collectionVariables.get(\"tellerTotpSecret\");",
+                  "if (!secret) {",
+                  "  throw new Error(\"tellerTotpSecret is empty: the account is already enrolled with a secret this collection does not know. \" +",
+                  "    \"Reset it with 'Reset teller authenticator' (board token) or drop the local data with 'docker compose --profile identity down -v'.\");",
+                  "}",
+                  "const alphabet = \"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567\";",
+                  "let bits = 0, buffer = 0;",
+                  "const key = [];",
+                  "for (const symbol of secret.replace(/=+$/, \"\")) {",
+                  "  buffer = (buffer << 5) | alphabet.indexOf(symbol);",
+                  "  bits += 5;",
+                  "  if (bits >= 8) { key.push((buffer >> (bits - 8)) & 0xff); bits -= 8; }",
+                  "}",
+                  "const toWords = (bytes) => {",
+                  "  const words = [];",
+                  "  bytes.forEach((b, i) => { words[i >>> 2] |= b << (24 - (i % 4) * 8); });",
+                  "  return CJ.lib.WordArray.create(words, bytes.length);",
+                  "};",
+                  "const counter = Math.floor(Date.now() / 1000 / 30);",
+                  "const counterBytes = [0, 0, 0, 0, (counter >>> 24) & 0xff, (counter >>> 16) & 0xff, (counter >>> 8) & 0xff, counter & 0xff];",
+                  "const mac = CJ.HmacSHA1(toWords(counterBytes), toWords(key));",
+                  "const hash = [];",
+                  "for (let i = 0; i < mac.sigBytes; i++) hash.push((mac.words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff);",
+                  "const offset = hash[hash.length - 1] & 0x0f;",
+                  "const binary = ((hash[offset] & 0x7f) << 24) | (hash[offset + 1] << 16) | (hash[offset + 2] << 8) | hash[offset + 3];",
+                  "pm.collectionVariables.set(\"otp\", String(binary % 1000000).padStart(6, \"0\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const location = pm.collectionVariables.get(\"location\");",
+                  "pm.test(\"code accepted and authorization resumed\", () => {",
+                  "  pm.response.to.have.status(302);",
+                  "  pm.expect(location).to.include(\"/oauth2/authorize\");",
+                  "});",
+                  "pm.collectionVariables.set(\"nextUrl\", location.startsWith(\"/\") ? pm.collectionVariables.get(\"baseUrl\") + location : location);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resume authorization",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              },
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              }
+            ],
+            "url": "{{nextUrl}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const location = pm.collectionVariables.get(\"location\") || \"\";",
+                  "pm.test(\"redirects to the client with a code\", () => {",
+                  "  pm.response.to.have.status(302);",
+                  "  pm.expect(location).to.include(pm.collectionVariables.get(\"redirectUri\"));",
+                  "});",
+                  "const param = (name) => {",
+                  "  const match = location.match(new RegExp(\"[?&]\" + name + \"=([^&#]*)\"));",
+                  "  return match ? decodeURIComponent(match[1]) : \"\";",
+                  "};",
+                  "pm.test(\"state is echoed\", () => pm.expect(param(\"state\")).to.eql(pm.collectionVariables.get(\"state\")));",
+                  "pm.test(\"carries an authorization code\", () => pm.expect(param(\"code\")).to.not.be.empty);",
+                  "pm.collectionVariables.set(\"authorizationCode\", param(\"code\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Exchange code for tokens",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/oauth2/token",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "authorization_code",
+                  "type": "text"
+                },
+                {
+                  "key": "code",
+                  "value": "{{authorizationCode}}",
+                  "type": "text"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirectUri}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "code_verifier",
+                  "value": "{{codeVerifier}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "const decodeJwt = (jwt) => {",
+                  "  const part = jwt.split(\".\")[1].replace(/-/g, \"+\").replace(/_/g, \"/\");",
+                  "  return JSON.parse(atob(part + \"=\".repeat((4 - (part.length % 4)) % 4)));",
+                  "};",
+                  "",
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"returns access, refresh and ID tokens\", () => {",
+                  "  pm.expect(body.access_token).to.be.a(\"string\");",
+                  "  pm.expect(body.refresh_token).to.be.a(\"string\");",
+                  "  pm.expect(body.id_token).to.be.a(\"string\");",
+                  "});",
+                  "pm.collectionVariables.set(\"tellerAccessToken\", body.access_token);",
+                  "pm.collectionVariables.set(\"tellerRefreshToken\", body.refresh_token);",
+                  "const claims = decodeJwt(body.access_token);",
+                  "console.log(\"teller access token claims\", JSON.stringify(claims));",
+                  "pm.test(\"amr includes mfa\", () => pm.expect(claims.amr).to.include(\"mfa\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "03 Sign in: board president (TOTP)",
+      "item": [
+        {
+          "name": "Start authorization",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              }
+            ],
+            "url": "{{baseUrl}}/oauth2/authorize?response_type=code&client_id={{clientId}}&redirect_uri={{redirectUri}}&scope=openid%20offline_access&state={{state}}&code_challenge={{codeChallenge}}&code_challenge_method=S256",
+            "description": "Starts the authorization code flow with PKCE. Unauthenticated, so the server saves the request in the session and redirects to /login.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// PKCE (RFC 7636): a fresh code verifier, its S256 challenge and a state for every sign-in.",
+                  "const CJ = require(\"crypto-js\");",
+                  "const b64url = (words) => CJ.enc.Base64.stringify(words).replace(/\\+/g, \"-\").replace(/\\//g, \"_\").replace(/=+$/, \"\");",
+                  "const verifier = b64url(CJ.lib.WordArray.random(32));",
+                  "pm.collectionVariables.set(\"codeVerifier\", verifier);",
+                  "pm.collectionVariables.set(\"codeChallenge\", b64url(CJ.SHA256(verifier)));",
+                  "pm.collectionVariables.set(\"state\", b64url(CJ.lib.WordArray.random(16)));",
+                  "pm.collectionVariables.set(\"sessionCookie\", \"\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"redirects to the sign-in page\", () => {",
+                  "  pm.response.to.have.status(302);",
+                  "  pm.expect(pm.collectionVariables.get(\"location\")).to.include(\"/login\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Load sign-in page",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              },
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              }
+            ],
+            "url": "{{baseUrl}}/login",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "",
+                  "const csrf = pm.response.text().match(/name=\"_csrf\"\\s+value=\"([^\"]+)\"/);",
+                  "pm.test(\"page carries a CSRF token\", () => pm.expect(csrf, \"no _csrf input in the page\").to.not.be.null);",
+                  "if (csrf) pm.collectionVariables.set(\"csrf\", csrf[1]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Submit credentials",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "{{boardUser}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{staffPassword}}",
+                  "type": "text"
+                },
+                {
+                  "key": "_csrf",
+                  "value": "{{csrf}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const location = pm.collectionVariables.get(\"location\");",
+                  "pm.test(\"credentials accepted\", () => {",
+                  "  pm.response.to.have.status(302);",
+                  "  pm.expect(location, \"rejected: \" + location).to.not.include(\"/login?error\");",
+                  "});",
+                  "pm.test(\"asks for the second factor\", () =>",
+                  "  pm.expect(location).to.include(\"/mfa\"));",
+                  "pm.collectionVariables.set(\"nextUrl\", location.startsWith(\"/\") ? pm.collectionVariables.get(\"baseUrl\") + location : location);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Load second-factor page",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              },
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              }
+            ],
+            "url": "{{baseUrl}}/mfa",
+            "description": "On the first sign-in the page shows a new TOTP secret (enrolment); the script keeps it in a collection variable for later sign-ins.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "",
+                  "const csrf = pm.response.text().match(/name=\"_csrf\"\\s+value=\"([^\"]+)\"/);",
+                  "pm.test(\"page carries a CSRF token\", () => pm.expect(csrf, \"no _csrf input in the page\").to.not.be.null);",
+                  "if (csrf) pm.collectionVariables.set(\"csrf\", csrf[1]);",
+                  "",
+                  "const enrol = pm.response.text().match(/<code>([A-Z2-7]+)<\\/code>/);",
+                  "if (enrol) {",
+                  "  pm.collectionVariables.set(\"boardTotpSecret\", enrol[1]);",
+                  "  console.log(\"board: TOTP enrolment, secret \" + enrol[1]);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Submit TOTP",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/mfa",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "otp",
+                  "value": "{{otp}}",
+                  "type": "text"
+                },
+                {
+                  "key": "_csrf",
+                  "value": "{{csrf}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// TOTP (RFC 6238): HMAC-SHA1, 30-second step, 6 digits, as RfcTotpAuthenticator.",
+                  "const CJ = require(\"crypto-js\");",
+                  "const secret = pm.collectionVariables.get(\"boardTotpSecret\");",
+                  "if (!secret) {",
+                  "  throw new Error(\"boardTotpSecret is empty: the account is already enrolled with a secret this collection does not know. \" +",
+                  "    \"Reset it with 'Reset teller authenticator' (board token) or drop the local data with 'docker compose --profile identity down -v'.\");",
+                  "}",
+                  "const alphabet = \"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567\";",
+                  "let bits = 0, buffer = 0;",
+                  "const key = [];",
+                  "for (const symbol of secret.replace(/=+$/, \"\")) {",
+                  "  buffer = (buffer << 5) | alphabet.indexOf(symbol);",
+                  "  bits += 5;",
+                  "  if (bits >= 8) { key.push((buffer >> (bits - 8)) & 0xff); bits -= 8; }",
+                  "}",
+                  "const toWords = (bytes) => {",
+                  "  const words = [];",
+                  "  bytes.forEach((b, i) => { words[i >>> 2] |= b << (24 - (i % 4) * 8); });",
+                  "  return CJ.lib.WordArray.create(words, bytes.length);",
+                  "};",
+                  "const counter = Math.floor(Date.now() / 1000 / 30);",
+                  "const counterBytes = [0, 0, 0, 0, (counter >>> 24) & 0xff, (counter >>> 16) & 0xff, (counter >>> 8) & 0xff, counter & 0xff];",
+                  "const mac = CJ.HmacSHA1(toWords(counterBytes), toWords(key));",
+                  "const hash = [];",
+                  "for (let i = 0; i < mac.sigBytes; i++) hash.push((mac.words[i >>> 2] >>> (24 - (i % 4) * 8)) & 0xff);",
+                  "const offset = hash[hash.length - 1] & 0x0f;",
+                  "const binary = ((hash[offset] & 0x7f) << 24) | (hash[offset + 1] << 16) | (hash[offset + 2] << 8) | hash[offset + 3];",
+                  "pm.collectionVariables.set(\"otp\", String(binary % 1000000).padStart(6, \"0\"));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const location = pm.collectionVariables.get(\"location\");",
+                  "pm.test(\"code accepted and authorization resumed\", () => {",
+                  "  pm.response.to.have.status(302);",
+                  "  pm.expect(location).to.include(\"/oauth2/authorize\");",
+                  "});",
+                  "pm.collectionVariables.set(\"nextUrl\", location.startsWith(\"/\") ? pm.collectionVariables.get(\"baseUrl\") + location : location);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resume authorization",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              },
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              }
+            ],
+            "url": "{{nextUrl}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const location = pm.collectionVariables.get(\"location\") || \"\";",
+                  "pm.test(\"redirects to the client with a code\", () => {",
+                  "  pm.response.to.have.status(302);",
+                  "  pm.expect(location).to.include(pm.collectionVariables.get(\"redirectUri\"));",
+                  "});",
+                  "const param = (name) => {",
+                  "  const match = location.match(new RegExp(\"[?&]\" + name + \"=([^&#]*)\"));",
+                  "  return match ? decodeURIComponent(match[1]) : \"\";",
+                  "};",
+                  "pm.test(\"state is echoed\", () => pm.expect(param(\"state\")).to.eql(pm.collectionVariables.get(\"state\")));",
+                  "pm.test(\"carries an authorization code\", () => pm.expect(param(\"code\")).to.not.be.empty);",
+                  "pm.collectionVariables.set(\"authorizationCode\", param(\"code\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Exchange code for tokens",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/oauth2/token",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "authorization_code",
+                  "type": "text"
+                },
+                {
+                  "key": "code",
+                  "value": "{{authorizationCode}}",
+                  "type": "text"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirectUri}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "code_verifier",
+                  "value": "{{codeVerifier}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "const decodeJwt = (jwt) => {",
+                  "  const part = jwt.split(\".\")[1].replace(/-/g, \"+\").replace(/_/g, \"/\");",
+                  "  return JSON.parse(atob(part + \"=\".repeat((4 - (part.length % 4)) % 4)));",
+                  "};",
+                  "",
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"returns access, refresh and ID tokens\", () => {",
+                  "  pm.expect(body.access_token).to.be.a(\"string\");",
+                  "  pm.expect(body.refresh_token).to.be.a(\"string\");",
+                  "  pm.expect(body.id_token).to.be.a(\"string\");",
+                  "});",
+                  "pm.collectionVariables.set(\"boardAccessToken\", body.access_token);",
+                  "pm.collectionVariables.set(\"boardRefreshToken\", body.refresh_token);",
+                  "const claims = decodeJwt(body.access_token);",
+                  "console.log(\"board access token claims\", JSON.stringify(claims));",
+                  "pm.test(\"amr includes mfa\", () => pm.expect(claims.amr).to.include(\"mfa\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "04 Member onboarding",
+      "item": [
+        {
+          "name": "Issue activation code (teller)",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/members/{{memberId}}/activation-codes",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tellerAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"returns the code and its expiry\", () => {",
+                  "  pm.expect(body.memberId).to.eql(pm.collectionVariables.get(\"memberId\"));",
+                  "  pm.expect(body.code).to.be.a(\"string\");",
+                  "  pm.expect(body.expiresAt).to.be.a(\"string\");",
+                  "});",
+                  "pm.test(\"Location and no-store\", () => {",
+                  "  pm.expect(pm.response.headers.get(\"Location\")).to.include(\"/activation-codes/\" + body.activationCodeId);",
+                  "  pm.expect(pm.response.headers.get(\"Cache-Control\")).to.include(\"no-store\");",
+                  "});",
+                  "pm.collectionVariables.set(\"activationCode\", body.code);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Load activation page",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              }
+            ],
+            "url": "{{baseUrl}}/activate",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.collectionVariables.set(\"sessionCookie\", \"\");"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "",
+                  "const csrf = pm.response.text().match(/name=\"_csrf\"\\s+value=\"([^\"]+)\"/);",
+                  "pm.test(\"page carries a CSRF token\", () => pm.expect(csrf, \"no _csrf input in the page\").to.not.be.null);",
+                  "if (csrf) pm.collectionVariables.set(\"csrf\", csrf[1]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate account",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/activate",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "memberNumber",
+                  "value": "{{memberNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "activationCode",
+                  "value": "{{activationCode}}",
+                  "type": "text"
+                },
+                {
+                  "key": "newPassword",
+                  "value": "{{memberPassword}}",
+                  "type": "text"
+                },
+                {
+                  "key": "_csrf",
+                  "value": "{{csrf}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"redirects to /login?activated\", () => {",
+                  "  pm.response.to.have.status(302);",
+                  "  pm.expect(pm.collectionVariables.get(\"location\")).to.include(\"/login?activated\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "05 Sign in: member",
+      "item": [
+        {
+          "name": "Start authorization",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              }
+            ],
+            "url": "{{baseUrl}}/oauth2/authorize?response_type=code&client_id={{clientId}}&redirect_uri={{redirectUri}}&scope=openid%20offline_access&state={{state}}&code_challenge={{codeChallenge}}&code_challenge_method=S256",
+            "description": "Starts the authorization code flow with PKCE. Unauthenticated, so the server saves the request in the session and redirects to /login.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// PKCE (RFC 7636): a fresh code verifier, its S256 challenge and a state for every sign-in.",
+                  "const CJ = require(\"crypto-js\");",
+                  "const b64url = (words) => CJ.enc.Base64.stringify(words).replace(/\\+/g, \"-\").replace(/\\//g, \"_\").replace(/=+$/, \"\");",
+                  "const verifier = b64url(CJ.lib.WordArray.random(32));",
+                  "pm.collectionVariables.set(\"codeVerifier\", verifier);",
+                  "pm.collectionVariables.set(\"codeChallenge\", b64url(CJ.SHA256(verifier)));",
+                  "pm.collectionVariables.set(\"state\", b64url(CJ.lib.WordArray.random(16)));",
+                  "pm.collectionVariables.set(\"sessionCookie\", \"\");"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"redirects to the sign-in page\", () => {",
+                  "  pm.response.to.have.status(302);",
+                  "  pm.expect(pm.collectionVariables.get(\"location\")).to.include(\"/login\");",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Load sign-in page",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              },
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              }
+            ],
+            "url": "{{baseUrl}}/login",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "",
+                  "const csrf = pm.response.text().match(/name=\"_csrf\"\\s+value=\"([^\"]+)\"/);",
+                  "pm.test(\"page carries a CSRF token\", () => pm.expect(csrf, \"no _csrf input in the page\").to.not.be.null);",
+                  "if (csrf) pm.collectionVariables.set(\"csrf\", csrf[1]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Submit credentials",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/login",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "{{memberNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{memberPassword}}",
+                  "type": "text"
+                },
+                {
+                  "key": "_csrf",
+                  "value": "{{csrf}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const location = pm.collectionVariables.get(\"location\");",
+                  "pm.test(\"credentials accepted\", () => {",
+                  "  pm.response.to.have.status(302);",
+                  "  pm.expect(location, \"rejected: \" + location).to.not.include(\"/login?error\");",
+                  "});",
+                  "pm.test(\"resumes the authorization request\", () =>",
+                  "  pm.expect(location).to.include(\"/oauth2/authorize\"));",
+                  "pm.collectionVariables.set(\"nextUrl\", location.startsWith(\"/\") ? pm.collectionVariables.get(\"baseUrl\") + location : location);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resume authorization",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              },
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              }
+            ],
+            "url": "{{nextUrl}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const location = pm.collectionVariables.get(\"location\") || \"\";",
+                  "pm.test(\"redirects to the client with a code\", () => {",
+                  "  pm.response.to.have.status(302);",
+                  "  pm.expect(location).to.include(pm.collectionVariables.get(\"redirectUri\"));",
+                  "});",
+                  "const param = (name) => {",
+                  "  const match = location.match(new RegExp(\"[?&]\" + name + \"=([^&#]*)\"));",
+                  "  return match ? decodeURIComponent(match[1]) : \"\";",
+                  "};",
+                  "pm.test(\"state is echoed\", () => pm.expect(param(\"state\")).to.eql(pm.collectionVariables.get(\"state\")));",
+                  "pm.test(\"carries an authorization code\", () => pm.expect(param(\"code\")).to.not.be.empty);",
+                  "pm.collectionVariables.set(\"authorizationCode\", param(\"code\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Exchange code for tokens",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/oauth2/token",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "authorization_code",
+                  "type": "text"
+                },
+                {
+                  "key": "code",
+                  "value": "{{authorizationCode}}",
+                  "type": "text"
+                },
+                {
+                  "key": "redirect_uri",
+                  "value": "{{redirectUri}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "code_verifier",
+                  "value": "{{codeVerifier}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "",
+                  "const decodeJwt = (jwt) => {",
+                  "  const part = jwt.split(\".\")[1].replace(/-/g, \"+\").replace(/_/g, \"/\");",
+                  "  return JSON.parse(atob(part + \"=\".repeat((4 - (part.length % 4)) % 4)));",
+                  "};",
+                  "",
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"returns access, refresh and ID tokens\", () => {",
+                  "  pm.expect(body.access_token).to.be.a(\"string\");",
+                  "  pm.expect(body.refresh_token).to.be.a(\"string\");",
+                  "  pm.expect(body.id_token).to.be.a(\"string\");",
+                  "});",
+                  "pm.collectionVariables.set(\"memberAccessToken\", body.access_token);",
+                  "pm.collectionVariables.set(\"memberRefreshToken\", body.refresh_token);",
+                  "const claims = decodeJwt(body.access_token);",
+                  "console.log(\"member access token claims\", JSON.stringify(claims));",
+                  "pm.test(\"amr is pwd\", () => pm.expect(claims.amr).to.include(\"pwd\"));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "06 Negative cases",
+      "item": [
+        {
+          "name": "Issue activation code without token",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/members/{{memberId}}/activation-codes",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test(\"status 401\", () => pm.response.to.have.status(401));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Issue activation code as member",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/members/{{memberId}}/activation-codes",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{memberAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test(\"status 403\", () => pm.response.to.have.status(403));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Issue activation code as board member",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/members/{{memberId}}/activation-codes",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{boardAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test(\"status 403\", () => pm.response.to.have.status(403));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Issue activation code for unknown member",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/members/{{unknownMemberId}}/activation-codes",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tellerAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404\", () => pm.response.to.have.status(404));",
+                  "pm.test(\"problem code MEMBER_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"MEMBER_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reset authenticator as teller",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/staff/authenticator-resets",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tellerAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"directoryAccount\": \"{{boardUser}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test(\"status 403\", () => pm.response.to.have.status(403));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reset own authenticator",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/staff/authenticator-resets",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{boardAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"directoryAccount\": \"{{boardUser}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 422\", () => pm.response.to.have.status(422));",
+                  "pm.test(\"problem code SAME_PERSON_NOT_ALLOWED\", () => pm.expect(pm.response.json().code).to.eql(\"SAME_PERSON_NOT_ALLOWED\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reset authenticator with empty body",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/staff/authenticator-resets",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{boardAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 400\", () => pm.response.to.have.status(400));",
+                  "pm.test(\"problem code VALIDATION_FAILED\", () => pm.expect(pm.response.json().code).to.eql(\"VALIDATION_FAILED\"));",
+                  "pm.test(\"names the invalid field\", () => pm.expect(pm.response.json().errors[0].field).to.eql(\"directoryAccount\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sign out without token",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/sessions/current",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test(\"status 401\", () => pm.response.to.have.status(401));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Load activation page",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/html"
+              }
+            ],
+            "url": "{{baseUrl}}/activate",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.collectionVariables.set(\"sessionCookie\", \"\");"]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "",
+                  "const csrf = pm.response.text().match(/name=\"_csrf\"\\s+value=\"([^\"]+)\"/);",
+                  "pm.test(\"page carries a CSRF token\", () => pm.expect(csrf, \"no _csrf input in the page\").to.not.be.null);",
+                  "if (csrf) pm.collectionVariables.set(\"csrf\", csrf[1]);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate with invalid code",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/activate",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "memberNumber",
+                  "value": "{{memberNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "activationCode",
+                  "value": "WRONG-CODE",
+                  "type": "text"
+                },
+                {
+                  "key": "newPassword",
+                  "value": "{{memberPassword}}",
+                  "type": "text"
+                },
+                {
+                  "key": "_csrf",
+                  "value": "{{csrf}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test(\"status 400\", () => pm.response.to.have.status(400));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Activate without CSRF token",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/activate",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "memberNumber",
+                  "value": "{{memberNumber}}",
+                  "type": "text"
+                },
+                {
+                  "key": "activationCode",
+                  "value": "WRONG-CODE",
+                  "type": "text"
+                },
+                {
+                  "key": "newPassword",
+                  "value": "{{memberPassword}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test(\"status 403\", () => pm.response.to.have.status(403));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Failed sign-in until lockout",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Cookie",
+                "value": "JSESSIONID={{sessionCookie}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/login",
+            "description": "Five failures within 15 minutes lock the username (LockoutPolicy). The request repeats itself in the Collection Runner until the sixth attempt; lockoutProbe is an unused member number, so no real account is locked.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "username",
+                  "value": "{{lockoutProbe}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "wrong-password",
+                  "type": "text"
+                },
+                {
+                  "key": "_csrf",
+                  "value": "{{csrf}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Each attempt needs its own session and CSRF token from GET /login.",
+                  "pm.sendRequest({ url: pm.collectionVariables.get(\"baseUrl\") + \"/login\", method: \"GET\", header: { Accept: \"text/html\" } }, (err, res) => {",
+                  "  if (err) throw err;",
+                  "  const session = res.headers.filter((h) => h.key.toLowerCase() === \"set-cookie\").map((h) => h.value.match(/^JSESSIONID=([^;]+)/)).find(Boolean);",
+                  "  if (session) pm.collectionVariables.set(\"sessionCookie\", session[1]);",
+                  "  pm.collectionVariables.set(\"csrf\", res.text().match(/name=\"_csrf\"\\s+value=\"([^\"]+)\"/)[1]);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const attempt = Number(pm.collectionVariables.get(\"lockoutAttempts\")) + 1;",
+                  "const location = pm.collectionVariables.get(\"location\");",
+                  "pm.test(\"attempt \" + attempt + \" is rejected\", () => {",
+                  "  pm.response.to.have.status(302);",
+                  "  pm.expect(location).to.include(\"/login?error=\");",
+                  "});",
+                  "if (attempt < 6) {",
+                  "  pm.collectionVariables.set(\"lockoutAttempts\", String(attempt));",
+                  "  pm.execution.setNextRequest(\"Failed sign-in until lockout\");",
+                  "} else {",
+                  "  pm.collectionVariables.set(\"lockoutAttempts\", \"0\");",
+                  "  pm.test(\"username is locked\", () => pm.expect(location).to.include(\"/login?error=locked\"));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "07 Staff authenticator reset",
+      "item": [
+        {
+          "name": "Reset teller authenticator (board)",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/staff/authenticator-resets",
+            "description": "Requires a board token with function PRESIDENT or COMPLIANCE and amr=mfa. The teller's sessions are revoked and the next sign-in enrols a new TOTP secret.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{boardAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"directoryAccount\": \"{{tellerUser}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"returns the reset window\", () => {",
+                  "  pm.expect(body.staffSub).to.be.a(\"string\");",
+                  "  pm.expect(body.enrolmentDeadline).to.be.a(\"string\");",
+                  "  pm.expect(body.sessionsRevoked).to.be.at.least(1);",
+                  "});",
+                  "pm.collectionVariables.set(\"tellerTotpSecret\", \"\");"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh revoked teller session",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/oauth2/token",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{tellerRefreshToken}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"refresh rejected\", () => { pm.response.to.have.status(400); pm.expect(pm.response.json().error).to.eql(\"invalid_grant\"); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "08 Refresh token rotation",
+      "item": [
+        {
+          "name": "Refresh member tokens",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/oauth2/token",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{memberRefreshToken}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"rotates the refresh token\", () => pm.expect(body.refresh_token).to.not.eql(pm.collectionVariables.get(\"memberRefreshToken\")));",
+                  "pm.collectionVariables.set(\"memberPreviousRefreshToken\", pm.collectionVariables.get(\"memberRefreshToken\"));",
+                  "pm.collectionVariables.set(\"memberAccessToken\", body.access_token);",
+                  "pm.collectionVariables.set(\"memberRefreshToken\", body.refresh_token);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reuse rotated refresh token",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/oauth2/token",
+            "description": "Presenting a rotated refresh token is treated as theft: the whole session is revoked.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{memberPreviousRefreshToken}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"reuse rejected\", () => { pm.response.to.have.status(400); pm.expect(pm.response.json().error).to.eql(\"invalid_grant\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh after reuse detection",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/oauth2/token",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{memberRefreshToken}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"latest token is revoked too\", () => { pm.response.to.have.status(400); pm.expect(pm.response.json().error).to.eql(\"invalid_grant\"); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "09 Sessions",
+      "item": [
+        {
+          "name": "Revoke member access token",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/oauth2/revoke",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "token",
+                  "value": "{{memberAccessToken}}",
+                  "type": "text"
+                },
+                {
+                  "key": "token_type_hint",
+                  "value": "access_token",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test(\"status 200\", () => pm.response.to.have.status(200));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sign out current session (board)",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/sessions/current",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{boardAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test(\"status 204\", () => pm.response.to.have.status(204));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh after sign-out",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "url": "{{baseUrl}}/oauth2/token",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "{{clientId}}",
+                  "type": "text"
+                },
+                {
+                  "key": "refresh_token",
+                  "value": "{{boardRefreshToken}}",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"refresh rejected\", () => { pm.response.to.have.status(400); pm.expect(pm.response.json().error).to.eql(\"invalid_grant\"); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sign out all sessions (board)",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/sessions",
+            "description": "Ends every session of the caller. The access token stays valid until it expires (10 minutes, stateless JWT).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{boardAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test(\"status 204\", () => pm.response.to.have.status(204));"]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

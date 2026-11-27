@@ -1,0 +1,17 @@
+spring:
+  flyway:
+    enabled: true
+  kafka:
+    bootstrap-servers: localhost:9092
+    listener:
+      auto-startup: false
+
+kafka:
+  identity-access-service: test-only
+
+cache:
+  keyPrefix: "identity-access:"
+
+solidaria:
+  clients:
+    web-origin: http://localhost

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Activar cuenta · Solidaria+</title>
+</head>
+<body>
+<main>
+    <h1>Activar su cuenta</h1>
+    <p role="alert" th:if="${error == 'VALIDATION_FAILED'}">
+        La contraseña debe tener al menos 12 caracteres, con una mayúscula, una minúscula, un número y un
+        carácter especial.
+    </p>
+    <p role="alert" th:if="${error != null and error != 'VALIDATION_FAILED'}">
+        El código de activación no es válido o ya expiró. Solicite uno nuevo en ventanilla.
+    </p>
+    <form method="post" th:action="@{/activate}">
+        <label>Número de socio
+            <input name="memberNumber" inputmode="numeric" required>
+        </label>
+        <label>Código de activación
+            <input name="activationCode" autocomplete="one-time-code" required>
+        </label>
+        <label>Nueva contraseña
+            <input name="newPassword" type="password" autocomplete="new-password" minlength="12" required>
+        </label>
+        <button type="submit">Activar</button>
+    </form>
+</main>
+</body>
+</html>

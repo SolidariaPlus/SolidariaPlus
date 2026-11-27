@@ -1,2 +1,4 @@
 # identity-access-service in QA: environment-specific values only (principle E-03).
 environment: qa
+env:
+  SPRING_PROFILES_ACTIVE: qa

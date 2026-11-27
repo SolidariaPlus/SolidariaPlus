@@ -175,6 +175,7 @@ services:
       SERVICE_DB_PASSWORD: ${SERVICE_DB_PASSWORD:-local-service-db}
       SERVICE_CACHE_PASSWORD: ${SERVICE_CACHE_PASSWORD:-local-service-cache}
       KAFKA_SERVICE_PASSWORD: ${KAFKA_SERVICE_PASSWORD:-local-kafka-service}
+      STAFF_LOCAL_PASSWORD: ${STAFF_LOCAL_PASSWORD:-local-staff-password}
     ports: ["4566:4566"]
     volumes:
       - localstack-data:/var/lib/localstack

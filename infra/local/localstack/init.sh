@@ -31,10 +31,24 @@ grep -Ev '^[[:space:]]*(#|$)' "$SERVICES_FILE" | while read -r service database 
     "{\"username\":\"${service}\",\"password\":\"${CACHE_PASSWORD}\",\"host\":\"valkey\",\"port\":6379,\"keyPrefix\":\"${prefix}:\"}"
   put_secret "${base}/kafka" \
     "{\"username\":\"${service}\",\"password\":\"${KAFKA_PASSWORD}\",\"mechanism\":\"SCRAM-SHA-512\"}"
+  put_secret "/solidaria/${ENVIRONMENT}/kafka/users/${service}" "${KAFKA_PASSWORD}"
   put_parameter "${base}/kafka/bootstrap-servers" "kafka:9092"
   put_parameter "${base}/rabbitmq/endpoint" "amqp://rabbitmq:5672/solidaria"
   echo "LocalStack: settings of ${service} ready"
 done
+
+# MS-17 keys, generated once per volume so tokens and encrypted secrets survive a restart.
+put_secret_once() {
+  awslocal secretsmanager describe-secret --secret-id "$1" >/dev/null 2>&1 || put_secret "$1" "$2"
+}
+identity="/solidaria/${ENVIRONMENT}/identity-access-service"
+key_file="$(mktemp)"
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$key_file" 2>/dev/null
+put_secret_once "${identity}/signing-key" \
+  "{\"kid\":\"local-$(date +%Y%m%d)\",\"privateKey\":\"$(openssl pkcs8 -topk8 -nocrypt -in "$key_file" -outform DER | base64 | tr -d '\n')\",\"publicKey\":\"$(openssl pkey -in "$key_file" -pubout -outform DER | base64 | tr -d '\n')\"}"
+rm -f "$key_file"
+put_secret_once "${identity}/field-encryption-key" "{\"aesKey\":\"$(head -c 32 /dev/urandom | base64 | tr -d '\n')\"}"
+put_secret "${identity}/directory" "{\"password\":\"${STAFF_LOCAL_PASSWORD:?STAFF_LOCAL_PASSWORD is required}\"}"
 
 put_parameter "/solidaria/${ENVIRONMENT}/session/state" "on"
 echo "LocalStack initialization complete"

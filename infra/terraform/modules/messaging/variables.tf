@@ -67,6 +67,11 @@ variable "rabbitmq_jwks_url" {
   description = "JWKS URL of MS-17 that the RabbitMQ OAuth 2.0 backend trusts. Empty until MS-17 issues tokens (KAN-18)."
   type        = string
   default     = ""
+
+  validation {
+    condition     = var.rabbitmq_jwks_url == "" || startswith(var.rabbitmq_jwks_url, "https://")
+    error_message = "rabbitmq_jwks_url must be empty or an https:// URL (RabbitMQ 4.1+ rejects other schemes at boot)."
+  }
 }
 
 variable "messaging_dir" {
