@@ -1,5 +1,6 @@
 package com.solidariaplus.identity.identityaccess.infrastructure.adapter.in.web;
 
+import com.solidariaplus.identity.identityaccess.application.port.in.SignInRateLimitUseCase;
 import java.util.Map;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -8,6 +9,7 @@ import org.springframework.security.authentication.LockedException;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.ExceptionMappingAuthenticationFailureHandler;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
@@ -22,13 +24,15 @@ class PagesSecurityConfig implements WebMvcConfigurer {
 
     @Bean
     @Order(3)
-    SecurityFilterChain pagesFilterChain(HttpSecurity http, SecondFactorSuccessHandler successHandler)
+    SecurityFilterChain pagesFilterChain(
+            HttpSecurity http, SecondFactorSuccessHandler successHandler, SignInRateLimitUseCase rateLimit)
             throws Exception {
         ExceptionMappingAuthenticationFailureHandler failureHandler =
                 new ExceptionMappingAuthenticationFailureHandler();
         failureHandler.setDefaultFailureUrl("/login?error=credentials");
         failureHandler.setExceptionMappings(Map.of(LockedException.class.getName(), "/login?error=locked"));
-        http.authorizeHttpRequests(requests -> requests.requestMatchers(
+        http.addFilterBefore(new SignInRateLimitFilter(rateLimit), UsernamePasswordAuthenticationFilter.class)
+                .authorizeHttpRequests(requests -> requests.requestMatchers(
                                 "/login", "/activate", "/mfa", "/error", "/actuator/health/**", "/actuator/prometheus")
                         .permitAll()
                         .anyRequest()

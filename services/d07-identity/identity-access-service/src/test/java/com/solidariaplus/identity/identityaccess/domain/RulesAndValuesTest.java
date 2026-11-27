@@ -20,6 +20,7 @@ import com.solidariaplus.identity.identityaccess.domain.model.vo.TokenHash;
 import com.solidariaplus.identity.identityaccess.domain.service.ActivationCodeGenerator;
 import com.solidariaplus.identity.identityaccess.domain.service.LockoutPolicy;
 import com.solidariaplus.identity.identityaccess.domain.service.PasswordPolicy;
+import com.solidariaplus.identity.identityaccess.domain.service.SignInRateLimitPolicy;
 import com.solidariaplus.identity.identityaccess.domain.service.Uuids;
 import java.time.Duration;
 import java.util.UUID;
@@ -33,6 +34,12 @@ class RulesAndValuesTest {
         assertCode(() -> PasswordPolicy.validate("Corta-1"), ErrorCode.VALIDATION_FAILED);
         assertCode(() -> PasswordPolicy.validate("sinmayusculas-2026"), ErrorCode.VALIDATION_FAILED);
         assertCode(() -> PasswordPolicy.validate(null), ErrorCode.VALIDATION_FAILED);
+    }
+
+    @Test
+    void twentyFirstRequestInAMinuteExceedsTheRateLimit() {
+        assertThat(SignInRateLimitPolicy.isExceeded(20)).isFalse();
+        assertThat(SignInRateLimitPolicy.isExceeded(21)).isTrue();
     }
 
     @Test

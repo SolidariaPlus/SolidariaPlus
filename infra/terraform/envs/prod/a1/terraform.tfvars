@@ -18,7 +18,7 @@ database_services = {
 }
 
 cache_services = {
-  "identity-access-service" = "identity-access"
+  "identity-access-service" = "ia"
 }
 
 aurora_instance_class = "db.t4g.medium"

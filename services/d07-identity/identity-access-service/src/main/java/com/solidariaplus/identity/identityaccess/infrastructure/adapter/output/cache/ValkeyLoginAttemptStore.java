@@ -3,18 +3,20 @@ package com.solidariaplus.identity.identityaccess.infrastructure.adapter.output.
 import com.solidariaplus.identity.identityaccess.application.port.output.LoginAttemptStore;
 import com.solidariaplus.identity.identityaccess.domain.model.vo.TokenHash;
 import java.time.Duration;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+/** Keys ia:fail:{sha256(identifier)} and ia:lock:{sha256(identifier)}: no personal data in the key. */
 @Component
 class ValkeyLoginAttemptStore implements LoginAttemptStore {
     private final StringRedisTemplate valkey;
-    private final String keyPrefix;
+    private final ValkeyKeys keys;
+    private final ExpiringCounter counter;
 
-    ValkeyLoginAttemptStore(StringRedisTemplate valkey, @Value("${solidaria.cache.key-prefix}") String keyPrefix) {
+    ValkeyLoginAttemptStore(StringRedisTemplate valkey, ValkeyKeys keys, ExpiringCounter counter) {
         this.valkey = valkey;
-        this.keyPrefix = keyPrefix;
+        this.keys = keys;
+        this.counter = counter;
     }
 
     @Override
@@ -24,12 +26,7 @@ class ValkeyLoginAttemptStore implements LoginAttemptStore {
 
     @Override
     public long recordFailure(String identifier, Duration window) {
-        String key = key("fail", identifier);
-        Long failures = valkey.opsForValue().increment(key);
-        if (failures != null && failures == 1) {
-            valkey.expire(key, window);
-        }
-        return failures == null ? 0 : failures;
+        return counter.increment(key("fail", identifier), window);
     }
 
     @Override
@@ -43,6 +40,6 @@ class ValkeyLoginAttemptStore implements LoginAttemptStore {
     }
 
     private String key(String kind, String identifier) {
-        return keyPrefix + kind + ":" + TokenHash.of(identifier).sha256Hex();
+        return keys.of(kind, TokenHash.of(identifier).sha256Hex());
     }
 }

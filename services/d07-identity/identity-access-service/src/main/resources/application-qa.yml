@@ -10,6 +10,10 @@ spring:
       - aws-parameterstore:/solidaria/qa/identity-access-service/kafka/?prefix=kafka.
       - aws-parameterstore:/solidaria/qa/identity-access-service/ldap/?prefix=ldap.
 
+  flyway:
+    # The synthetic seed runs only in the local and qa profiles (KAN-16 §3.2).
+    locations: classpath:db/migration,classpath:db/seed
+
 solidaria:
   clients:
     web-origin: https://qa.solidariaplus.ec
