@@ -20,6 +20,7 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.authentication.OAuth2AuthorizationCodeRequestAuthenticationProvider;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.token.DelegatingOAuth2TokenGenerator;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
@@ -28,6 +29,7 @@ import org.springframework.security.oauth2.server.authorization.token.OAuth2Toke
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenGenerator;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
 
 @Configuration(proxyBeanMethods = false)
@@ -38,13 +40,24 @@ class AuthorizationServerConfig {
     SecurityFilterChain authorizationServerFilterChain(HttpSecurity http, RegisteredClientRepository clients)
             throws Exception {
         PublicClientRefreshAuthentication publicRefresh = new PublicClientRefreshAuthentication(clients);
+        LoopbackAwareRequestValidator loopbackValidator = new LoopbackAwareRequestValidator();
+        RefreshCookieRequestFilter cookieFilter = new RefreshCookieRequestFilter();
         http.oauth2AuthorizationServer(server -> {
                     http.securityMatcher(server.getEndpointsMatcher());
                     server.oidc(Customizer.withDefaults())
                             .clientAuthentication(client -> client.authenticationConverters(
                                             converters -> converters.addFirst(publicRefresh))
-                                    .authenticationProviders(providers -> providers.addFirst(publicRefresh)));
+                                    .authenticationProviders(providers -> providers.addFirst(publicRefresh)))
+                            .authorizationEndpoint(endpoint ->
+                                    endpoint.authenticationProviders(providers -> providers.stream()
+                                            .filter(p ->
+                                                    p instanceof OAuth2AuthorizationCodeRequestAuthenticationProvider)
+                                            .map(p -> (OAuth2AuthorizationCodeRequestAuthenticationProvider) p)
+                                            .forEach(p -> p.setAuthenticationValidator(loopbackValidator))))
+                            .tokenEndpoint(endpoint ->
+                                    endpoint.accessTokenResponseHandler(new RefreshCookieTokenResponseHandler()));
                 })
+                .addFilterBefore(cookieFilter, UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(requests -> requests.anyRequest().authenticated())
                 .oauth2ResourceServer(server -> server.jwt(Customizer.withDefaults()))
                 .exceptionHandling(exceptions -> exceptions.defaultAuthenticationEntryPointFor(
