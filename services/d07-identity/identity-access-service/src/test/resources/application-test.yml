@@ -1,16 +1,21 @@
 spring:
   flyway:
     enabled: true
+    locations: classpath:db/migration,classpath:db/seed
   kafka:
     bootstrap-servers: localhost:9092
     listener:
       auto-startup: false
+    producer:
+      properties:
+        # No broker in the tests: the outbox relay fails fast instead of holding the shutdown.
+        max.block.ms: 2000
 
 kafka:
   identity-access-service: test-only
 
 cache:
-  keyPrefix: "identity-access:"
+  keyPrefix: "ia:"
 
 solidaria:
   clients:

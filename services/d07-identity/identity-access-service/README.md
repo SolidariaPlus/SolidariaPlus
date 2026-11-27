@@ -34,11 +34,19 @@ curl -s localhost:8097/actuator/health                               # {"status"
   `STAFF_LOCAL_PASSWORD` of `.env.example`.
 - Members are created by `MemberAdmitted` on `member-management.events`; a teller then issues an
   activation code with `POST /members/{memberId}/activation-codes`.
+- The `local` and `qa` profiles also load `db/seed/R__synthetic_seed.sql` (KAN-16 §9): members 1001 to
+  1004 waiting for their activation code and six staff profiles of the synthetic directory
+  (`infra/ad/staff.csv`). It holds no credential and keeps rows that already exist; Production never
+  loads it.
+- `V1__init.sql` is not released yet, so it is still edited. After pulling a change to it, drop the
+  local database (`docker compose --profile identity down -v`, then `up` again) or Flyway refuses its
+  checksum.
 - `postman/identity-access.postman_collection.json` holds the functional tests: public endpoints, sign-in
   with PKCE and TOTP (automated, no browser), member onboarding, negative cases, refresh token rotation
   and sessions. Run its folders in order; its description explains the setup.
-- `build` starts PostgreSQL with Testcontainers, so Docker must be running. The domain layer needs
-  80 % line coverage (`domainCoverage`).
+- `build` starts PostgreSQL and Valkey with Testcontainers, so Docker must be running. The integration
+  tests cover the repositories, the uniqueness rules, the column comments, the seed, the registered
+  clients and the Valkey TTLs. The domain layer needs 80 % line coverage (`domainCoverage`).
 
 ## Contracts
 
@@ -52,6 +60,23 @@ curl -s localhost:8097/actuator/health                               # {"status"
 - Consumed: `MemberAdmitted` and `MembershipEnded`, idempotent by CloudEvents `id`, five attempts then
   `member-management.events.identity-access.dlt`.
 - Refresh tokens have the form `<sid>.<random>`; presenting a rotated one revokes the session.
+
+## Stores
+
+Aurora database `identity_access` (`V1__init.sql`, a `COMMENT` on every column): `subjects`,
+`member_accounts`, `activation_codes`, `staff_profiles`, `sessions`, `refresh_token_families`, the
+default Spring Authorization Server tables `oauth2_registered_client` and `oauth2_authorization`, and
+`outbox` and `processed_events`. The clients of `application.yml` are saved in
+`oauth2_registered_client` at start-up, so the configuration stays their only source.
+
+Valkey keys, under the prefix `ia:` that the ACL user of MS-17 may access (ADR-055):
+
+| Key                            | TTL                              | Use                                                                                                             |
+| ------------------------------ | -------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `ia:fail:{sha256(identifier)}` | 15 min from the first failure    | Failed sign-ins; 5 lock the identifier                                                                          |
+| `ia:lock:{sha256(identifier)}` | 15 min                           | Locked identifier (`AUTH_ACCOUNT_LOCKED`)                                                                       |
+| `ia:rl:{ip}:{epochMinute}`     | 120 s                            | More than 20 form posts a minute to `/login`, `/activate` or `/mfa` from one address get 429 with `Retry-After` |
+| `ia:revoked:{sid}`             | 10 min, the longest access token | The REST API and userinfo refuse tokens of a revoked session                                                    |
 
 ## Configuration
 

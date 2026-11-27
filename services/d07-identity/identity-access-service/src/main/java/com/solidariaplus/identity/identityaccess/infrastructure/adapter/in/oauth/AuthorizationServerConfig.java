@@ -3,6 +3,7 @@ package com.solidariaplus.identity.identityaccess.infrastructure.adapter.in.oaut
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.solidariaplus.identity.identityaccess.application.port.in.RevokeSessionsUseCase;
+import com.solidariaplus.identity.identityaccess.application.port.in.SessionStatusUseCase;
 import com.solidariaplus.identity.identityaccess.application.port.in.SessionTokenUseCase;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -11,6 +12,11 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
@@ -53,6 +59,17 @@ class AuthorizationServerConfig {
         JwtGenerator jwtGenerator = new JwtGenerator(new NimbusJwtEncoder(keys));
         jwtGenerator.setJwtCustomizer(claimsCustomizer);
         return new DelegatingOAuth2TokenGenerator(jwtGenerator, new SessionRefreshTokens());
+    }
+
+    /** Decoder of the resource servers of MS-17 (REST API and userinfo): revoked sessions are refused. */
+    @Bean
+    JwtDecoder jwtDecoder(JWKSource<SecurityContext> keys, SessionStatusUseCase sessions) {
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSource(keys)
+                .jwsAlgorithm(SignatureAlgorithm.ES256)
+                .build();
+        decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                JwtValidators.createDefault(), new ActiveSessionValidator(sessions)));
+        return decoder;
     }
 
     @Bean

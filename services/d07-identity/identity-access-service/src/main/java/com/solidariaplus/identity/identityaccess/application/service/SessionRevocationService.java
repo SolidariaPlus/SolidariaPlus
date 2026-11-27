@@ -1,10 +1,12 @@
 package com.solidariaplus.identity.identityaccess.application.service;
 
 import com.solidariaplus.identity.identityaccess.application.port.in.RevokeSessionsUseCase;
+import com.solidariaplus.identity.identityaccess.application.port.in.SessionStatusUseCase;
 import com.solidariaplus.identity.identityaccess.application.port.in.SessionTokenUseCase;
 import com.solidariaplus.identity.identityaccess.application.port.output.DirectoryGateway;
 import com.solidariaplus.identity.identityaccess.application.port.output.DirectoryGateway.DirectoryIdentity;
 import com.solidariaplus.identity.identityaccess.application.port.output.EventPublisher;
+import com.solidariaplus.identity.identityaccess.application.port.output.RevokedSessionStore;
 import com.solidariaplus.identity.identityaccess.domain.event.AuditRecorded;
 import com.solidariaplus.identity.identityaccess.domain.event.AuditRecorded.Action;
 import com.solidariaplus.identity.identityaccess.domain.event.AuditRecorded.Outcome;
@@ -23,12 +25,14 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @Transactional
-public class SessionRevocationService implements RevokeSessionsUseCase, SessionTokenUseCase {
+public class SessionRevocationService implements RevokeSessionsUseCase, SessionTokenUseCase, SessionStatusUseCase {
     private final SessionRepository sessions;
+    private final RevokedSessionStore revokedSessions;
     private final StaffProfileRepository staffProfiles;
     private final DirectoryGateway directory;
     private final EventPublisher events;
@@ -36,11 +40,13 @@ public class SessionRevocationService implements RevokeSessionsUseCase, SessionT
 
     public SessionRevocationService(
             SessionRepository sessions,
+            RevokedSessionStore revokedSessions,
             StaffProfileRepository staffProfiles,
             DirectoryGateway directory,
             EventPublisher events,
             Clock clock) {
         this.sessions = sessions;
+        this.revokedSessions = revokedSessions;
         this.staffProfiles = staffProfiles;
         this.directory = directory;
         this.events = events;
@@ -73,10 +79,7 @@ public class SessionRevocationService implements RevokeSessionsUseCase, SessionT
     public int revokeAllSessions(SubjectId sub, Reason reason) {
         Instant now = clock.instant();
         List<Session> active = sessions.findActiveBySubject(sub);
-        active.forEach(session -> {
-            session.revoke(now);
-            sessions.save(session);
-        });
+        active.forEach(session -> markRevoked(session, now));
         publish(SessionRevoked.ofAllSessions(sub, reason, now));
         return active.size();
     }
@@ -106,9 +109,20 @@ public class SessionRevocationService implements RevokeSessionsUseCase, SessionT
         if (session.isRevoked()) {
             return;
         }
+        markRevoked(session, now);
+        publish(SessionRevoked.ofSession(session.getSub(), session.getSessionId(), reason, now));
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.SUPPORTS)
+    public boolean isRevoked(SessionId sessionId) {
+        return revokedSessions.isRevoked(sessionId);
+    }
+
+    private void markRevoked(Session session, Instant now) {
         session.revoke(now);
         sessions.save(session);
-        publish(SessionRevoked.ofSession(session.getSub(), session.getSessionId(), reason, now));
+        revokedSessions.markRevoked(session.getSessionId(), now, SessionPolicy.ACCESS_TOKEN_MAX_LIFETIME);
     }
 
     private void publish(SessionRevoked revoked) {
