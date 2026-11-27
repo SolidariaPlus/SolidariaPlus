@@ -1,5 +1,15 @@
 # S3 bucket owned by one service or by the platform (KAN-2 section 6.5): private, encrypted,
 # TLS only, versioning on by default (KAN-30). Object Lock is opt-in (MS-05, MS-13, MS-15).
+#
+# Learner Lab SCP denies s3:GetBucketObjectLockConfiguration. The AWS provider v6.x calls that
+# API on every refresh of aws_s3_bucket, causing plan/apply to fail. This module therefore does
+# NOT manage the aws_s3_bucket resource; the caller must create the bucket once with the CLI:
+#
+#   aws s3api create-bucket --bucket <name> --region <region> \
+#     --create-bucket-configuration LocationConstraint=<region>
+#
+# All bucket sub-resources (versioning, encryption, public-access-block, ownership, object-lock)
+# are still managed here by referencing the bucket by its name string.
 
 terraform {
   required_version = ">= 1.11"
@@ -36,19 +46,21 @@ variable "object_lock_days" {
 }
 
 variable "force_destroy" {
-  description = "Allow deleting a non-empty bucket (QA test buckets only)."
+  description = "Allow deleting a non-empty bucket (QA test buckets only). Not enforced by this module; caller must empty the bucket before destroy."
   type        = bool
   default     = false
 }
 
-resource "aws_s3_bucket" "this" {
-  bucket              = var.name
-  force_destroy       = var.force_destroy
-  object_lock_enabled = var.object_lock_mode != null
+data "aws_region" "current" {}
+
+locals {
+  bucket_id              = var.name
+  bucket_arn             = "arn:aws:s3:::${var.name}"
+  bucket_regional_domain = "${var.name}.s3.${data.aws_region.current.name}.amazonaws.com"
 }
 
 resource "aws_s3_bucket_versioning" "this" {
-  bucket = aws_s3_bucket.this.id
+  bucket = local.bucket_id
 
   versioning_configuration {
     status = var.versioning || var.object_lock_mode != null ? "Enabled" : "Suspended"
@@ -56,7 +68,7 @@ resource "aws_s3_bucket_versioning" "this" {
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
-  bucket = aws_s3_bucket.this.id
+  bucket = local.bucket_id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -67,7 +79,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
 }
 
 resource "aws_s3_bucket_public_access_block" "this" {
-  bucket = aws_s3_bucket.this.id
+  bucket = local.bucket_id
 
   block_public_acls       = true
   block_public_policy     = true
@@ -76,7 +88,7 @@ resource "aws_s3_bucket_public_access_block" "this" {
 }
 
 resource "aws_s3_bucket_ownership_controls" "this" {
-  bucket = aws_s3_bucket.this.id
+  bucket = local.bucket_id
 
   rule {
     object_ownership = "BucketOwnerEnforced"
@@ -86,7 +98,7 @@ resource "aws_s3_bucket_ownership_controls" "this" {
 resource "aws_s3_bucket_object_lock_configuration" "this" {
   count = var.object_lock_mode == null ? 0 : 1
 
-  bucket = aws_s3_bucket.this.id
+  bucket = local.bucket_id
 
   rule {
     default_retention {
@@ -98,15 +110,15 @@ resource "aws_s3_bucket_object_lock_configuration" "this" {
 
 output "id" {
   description = "Bucket name."
-  value       = aws_s3_bucket.this.id
+  value       = local.bucket_id
 }
 
 output "arn" {
   description = "Bucket ARN."
-  value       = aws_s3_bucket.this.arn
+  value       = local.bucket_arn
 }
 
 output "regional_domain_name" {
-  description = "Regional domain name (CloudFront origin)."
-  value       = aws_s3_bucket.this.bucket_regional_domain_name
+  description = "Regional domain name (S3 origin for Cloudflare or other CDN)."
+  value       = local.bucket_regional_domain
 }

@@ -51,10 +51,24 @@ variable "broker_instance_id" {
   default     = ""
 }
 
+# Separate boolean so that count is a constant known at plan time (the instance ID is only
+# known after apply, and Terraform disallows unknown values in count expressions).
+variable "create_broker_alarm" {
+  description = "True in A1 (platform slot); false in A2-A5."
+  type        = bool
+  default     = false
+}
+
 variable "aurora_cluster_identifier" {
   description = "Aurora cluster to watch; empty in accounts without Aurora."
   type        = string
   default     = ""
+}
+
+variable "create_aurora_alarm" {
+  description = "True when this slot has an Aurora cluster."
+  type        = bool
+  default     = false
 }
 
 locals {
@@ -87,7 +101,7 @@ resource "aws_cloudwatch_log_group" "eks" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "broker_status" {
-  count = var.broker_instance_id == "" ? 0 : 1
+  count = var.create_broker_alarm ? 1 : 0
 
   alarm_name          = "[${local.label}] ${var.name} broker instance status check failed"
   alarm_description   = "The Kafka and RabbitMQ broker instance fails its status checks (ADR-122, OI-15)."
@@ -105,7 +119,7 @@ resource "aws_cloudwatch_metric_alarm" "broker_status" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "aurora_cpu" {
-  count = var.aurora_cluster_identifier == "" ? 0 : 1
+  count = var.create_aurora_alarm ? 1 : 0
 
   alarm_name          = "[${local.label}] ${var.name} Aurora CPU above 80 %"
   alarm_description   = "The Aurora cluster has used more than 80 % CPU for 10 minutes."

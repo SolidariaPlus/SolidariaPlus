@@ -5,7 +5,7 @@ output "account_id" {
 
 output "state_bucket" {
   description = "Terraform state bucket of the account; the environment roots use it as their backend."
-  value       = aws_s3_bucket.state.bucket
+  value       = local.state_bucket
 }
 
 output "runner_label" {
