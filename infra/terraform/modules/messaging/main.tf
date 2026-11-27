@@ -24,12 +24,12 @@ data "aws_ssm_parameter" "al2023" {
 }
 
 locals {
-  prefix              = "/solidaria/${var.environment}/broker"
+  prefix = "/solidaria/${var.environment}/broker"
   # Learner Lab SCP denies s3:GetBucketObjectLockConfiguration; computed by name to avoid aws_s3_bucket refresh.
-  artifacts_bucket    = "${var.name}-broker-${data.aws_caller_identity.current.account_id}"
+  artifacts_bucket     = "${var.name}-broker-${data.aws_caller_identity.current.account_id}"
   artifacts_bucket_arn = "arn:aws:s3:::${local.artifacts_bucket}"
-  kafka_users  = [for line in split("\n", file("${var.messaging_dir}/kafka/users.conf")) : trimspace(line) if trimspace(line) != "" && !startswith(trimspace(line), "#")]
-  upload_files = fileset(var.messaging_dir, "**")
+  kafka_users          = [for line in split("\n", file("${var.messaging_dir}/kafka/users.conf")) : trimspace(line) if trimspace(line) != "" && !startswith(trimspace(line), "#")]
+  upload_files         = fileset(var.messaging_dir, "**")
 }
 
 # ---------------------------------------------------------------------------------------------
