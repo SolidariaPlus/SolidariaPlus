@@ -33,7 +33,7 @@ class AccessTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncodingCo
         }
         JwtClaimsSet.Builder claims = context.getClaims().audience(List.of(AUDIENCE));
         if (AuthorizationGrantType.CLIENT_CREDENTIALS.equals(context.getAuthorizationGrantType())) {
-            claims.claim("roles", List.of()).claim("amr", List.of("client_secret"));
+            claims.claim("roles", List.of("SERVICE")).claim("amr", List.of("client_secret"));
             return;
         }
         Authentication principal = context.getPrincipal();

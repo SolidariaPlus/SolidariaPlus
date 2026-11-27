@@ -20,3 +20,4 @@ cache:
 solidaria:
   clients:
     web-origin: http://localhost
+    services-secret: "{noop}test-services-secret"

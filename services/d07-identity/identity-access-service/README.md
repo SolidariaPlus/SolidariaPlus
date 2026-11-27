@@ -85,21 +85,118 @@ Valkey keys, under the prefix `ia:` that the ACL user of MS-17 may access (ADR-0
 | `local`      | LocalStack Secrets Manager `/solidaria/local/...`                        | Local directory, raw AES keyring, Flyway on |
 | `qa`, `prod` | Secrets Manager and Parameter Store `/solidaria/<env>/...` (group `aws`) | LDAPS directory, KMS keyring, TLS to Valkey |
 
-| Source                                                 | Properties                                                                      |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------- |
-| `/solidaria/<env>/identity-access-service/db`          | `db.*`: Aurora credentials                                                      |
-| `/solidaria/<env>/identity-access-service/cache`       | `cache.*`: Valkey user and key prefix                                           |
-| `/solidaria/<env>/kafka/users/identity-access-service` | SCRAM-SHA-512 password                                                          |
-| `/solidaria/<env>/identity-access-service/signing-key` | `signing.kid`, `signing.privateKey`, `signing.publicKey` (ES256, DER in Base64) |
-| `/solidaria/<env>/identity-access-service/ldap`        | `ldap.username`, `ldap.password` (QA and PROD)                                  |
-| `/solidaria/<env>/identity-access-service/ldap/url`    | `ldap.url` (Parameter Store)                                                    |
-| `KMS_KEY_ARN`, `SENTRY_DSN`                            | Environment variables of the Helm release                                       |
+| Source                                                 | Properties                                                                         |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `/solidaria/<env>/identity-access-service/db`          | `db.*`: Aurora credentials                                                         |
+| `/solidaria/<env>/identity-access-service/cache`       | `cache.*`: Valkey user and key prefix                                              |
+| `/solidaria/<env>/kafka/users/identity-access-service` | SCRAM-SHA-512 password                                                             |
+| `/solidaria/<env>/identity-access-service/signing-key` | `signing.kid`, `signing.privateKey`, `signing.publicKey` (ES256, DER in Base64)    |
+| `/solidaria/<env>/identity-access-service/clients`     | `solidaria.clients.services-secret`: secret of the M2M client `solidaria-services` |
+| `/solidaria/<env>/identity-access-service/ldap`        | `ldap.username`, `ldap.password` (QA and PROD)                                     |
+| `/solidaria/<env>/identity-access-service/ldap/url`    | `ldap.url` (Parameter Store)                                                       |
+| `KMS_KEY_ARN`, `SENTRY_DSN`                            | Environment variables of the Helm release                                          |
 
 - The service is published under `/auth`; `server.forward-headers-strategy=framework` makes the issuer
   and the redirects use the public URL behind CloudFront, the HTTP API and the ALB.
 - Actuator: `/actuator/health/liveness`, `/actuator/health/readiness` (database and Valkey) and
   `/actuator/prometheus`. Logs are ECS JSON without personal data; unhandled errors go to Sentry.
 - No secret is written in a file of this repository (RNF-SEG-05).
+
+## M2M client secret (KAN-48)
+
+The confidential client `solidaria-services` (grant `client_credentials`, scope `solidaria.internal`)
+authenticates with `client_secret_basic`. Its secret is read from
+`/solidaria/<env>/identity-access-service/clients`, whose value is a JSON object:
+
+```json
+{ "services-secret": "{bcrypt}<hash>" }
+```
+
+- **local**: `infra/local/localstack/init.sh` writes `{noop}${SERVICES_CLIENT_SECRET}`
+  (default `local-services-secret`, see `.env.example`).
+- **qa / prod**: Terraform (`service_settings` in `infra/terraform/envs/<env>/a1`, KAN-51) generates
+  a random secret once. It stores the bcrypt hash in `.../clients` and the plain value for the
+  calling services in `/solidaria/<env>/identity-access-service/m2m-client`
+  (`{"clientId":"solidaria-services","clientSecret":"..."}`). Terraform never overwrites either
+  secret afterwards.
+
+To rotate the secret by hand, update both secrets:
+
+```bash
+SECRET="$(openssl rand -base64 32)"   # plain value: give it to the calling services
+HASH="$(htpasswd -bnBC 10 "" "$SECRET" | tr -d ':\n' | sed 's/^\$2y/$2a/')"
+aws secretsmanager put-secret-value \
+  --secret-id /solidaria/<env>/identity-access-service/clients \
+  --secret-string "{\"services-secret\":\"{bcrypt}${HASH}\"}"
+aws secretsmanager put-secret-value \
+  --secret-id /solidaria/<env>/identity-access-service/m2m-client \
+  --secret-string "{\"clientId\":\"solidaria-services\",\"clientSecret\":\"${SECRET}\"}"
+```
+
+Never write the plain value in Git.
+
+The initial `signing-key` of QA and PROD is also generated by Terraform (EC P-256, `kid` =
+`<env>-<8 hex>`). Rotate it with the runbook below. The `ldap` secret starts as
+`{"username":"PENDING","password":"PENDING"}`. The service starts with it, because the LDAP
+health check is disabled, but staff sign-in fails until the MS-17 bind account of the directory
+is set:
+
+```bash
+aws secretsmanager put-secret-value --secret-id /solidaria/<env>/identity-access-service/ldap \
+  --secret-string '{"username":"<bind user>@ad.solidaria.internal","password":"<password>"}'
+```
+
+## Signing key rotation (RNF-17-04)
+
+The authorization server uses an EC P-256 key pair (`signing-key` in Secrets Manager) to sign every
+access token with ES256. The key rotates every 90 days. During the overlap period both keys appear in
+JWKS so resource servers can verify tokens signed by either key without a forced cache-bust.
+
+### Secret layout in Secrets Manager
+
+| Secret path (env = `local` | `qa` | `prod`) | Keys in secret |
+| ---------------------------------------------------------- | ------------------------------------------- |
+| `/solidaria/<env>/identity-access-service/signing-key` | `kid`, `privateKey`, `publicKey` (DER, Base64) |
+| `/solidaria/<env>/identity-access-service/signing-key-previous` | `kid`, `publicKey` (DER, Base64, public only) |
+
+The `signing-key-previous` secret is **absent until the first rotation**; the application starts
+without it. It is **removed after the overlap period** (90 days after the previous rotation).
+
+### Rotation runbook
+
+1. **Generate new key pair** (AWS CLI or console):
+
+   ```bash
+   # EC P-256, DER encoding
+   openssl ecparam -name prime256v1 -genkey -noout | openssl pkcs8 -topk8 -nocrypt -outform DER | base64 -w0
+   openssl ecparam -name prime256v1 -genkey -noout | openssl pkey -pubout -outform DER | base64 -w0
+   ```
+
+2. **Record the new kid** (e.g. `2026-02`) and the current kid (e.g. `2025-11`).
+
+3. **Create or update `signing-key-previous`** with the CURRENT key's `kid` and `publicKey` only —
+   no private key. This is the key that signed tokens that will still be valid during the overlap.
+
+4. **Update `signing-key`** with the NEW key's `kid`, `privateKey`, and `publicKey`.
+
+5. **Rolling-restart the service** (ECS rolling update). Every new pod picks up the new signing key.
+   The JWKS endpoint now returns both keys. Consumers re-fetch JWKS within 24 h (Cache-Control max-age).
+
+6. **Wait 90 days** (longer than the longest refresh-token TTL, which is 30 d for mobile). After that,
+   no token signed by the old key can still be valid.
+
+7. **Delete `signing-key-previous`** from Secrets Manager. The next rolling-restart removes the old key
+   from JWKS. Consumers will drop it from their cache within 24 h.
+
+### Verifying the rotation
+
+```bash
+curl -s https://<cloudfront-domain>/auth/oauth2/jwks | jq '.keys | length'   # 2 during overlap, 1 otherwise
+curl -s https://<cloudfront-domain>/auth/.well-known/oauth-authorization-server | jq .issuer
+```
+
+A token minted by the new key validates on a resource server that last fetched the JWKS up to 24 h ago,
+because the old verification key is still published. After 24 h all caches hold the latest JWKS.
 
 ## ADRs
 

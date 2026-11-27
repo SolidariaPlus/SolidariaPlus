@@ -64,6 +64,15 @@ spring:
               refresh-token-time-to-live: 10h
               reuse-refresh-tokens: false
               id-token-signature-algorithm: ES256
+          solidaria-services:
+            registration:
+              client-id: solidaria-services
+              client-secret: "${solidaria.clients.services-secret}"
+              client-authentication-methods: [client_secret_basic]
+              authorization-grant-types: [client_credentials]
+              scopes: [solidaria.internal]
+            token:
+              access-token-time-to-live: 10m
 
 server:
   port: ${SERVER_PORT:8097}

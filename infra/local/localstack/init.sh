@@ -49,6 +49,9 @@ put_secret_once "${identity}/signing-key" \
 rm -f "$key_file"
 put_secret_once "${identity}/field-encryption-key" "{\"aesKey\":\"$(head -c 32 /dev/urandom | base64 | tr -d '\n')\"}"
 put_secret "${identity}/directory" "{\"password\":\"${STAFF_LOCAL_PASSWORD:?STAFF_LOCAL_PASSWORD is required}\"}"
+# Secret of the M2M client solidaria-services (KAN-48). {noop} only on localhost; QA and PROD
+# store a {bcrypt} hash.
+put_secret "${identity}/clients" "{\"services-secret\":\"{noop}${SERVICES_CLIENT_SECRET:?SERVICES_CLIENT_SECRET is required}\"}"
 
 put_parameter "/solidaria/${ENVIRONMENT}/session/state" "on"
 echo "LocalStack initialization complete"

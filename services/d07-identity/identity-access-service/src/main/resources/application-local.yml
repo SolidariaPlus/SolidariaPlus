@@ -5,8 +5,10 @@ spring:
       - aws-secretsmanager:/solidaria/local/identity-access-service/cache?prefix=cache.
       - aws-secretsmanager:/solidaria/local/kafka/users/identity-access-service?prefix=kafka.
       - aws-secretsmanager:/solidaria/local/identity-access-service/signing-key?prefix=signing.
+      - optional:aws-secretsmanager:/solidaria/local/identity-access-service/signing-key-previous?prefix=signing.previous-
       - aws-secretsmanager:/solidaria/local/identity-access-service/field-encryption-key?prefix=encryption.
       - aws-secretsmanager:/solidaria/local/identity-access-service/directory?prefix=directory.
+      - aws-secretsmanager:/solidaria/local/identity-access-service/clients?prefix=solidaria.clients.
   cloud:
     aws:
       endpoint: http://localhost:4566

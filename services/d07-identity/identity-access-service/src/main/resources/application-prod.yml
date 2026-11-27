@@ -5,6 +5,8 @@ spring:
       - aws-secretsmanager:/solidaria/prod/identity-access-service/cache?prefix=cache.
       - aws-secretsmanager:/solidaria/prod/kafka/users/identity-access-service?prefix=kafka.
       - aws-secretsmanager:/solidaria/prod/identity-access-service/signing-key?prefix=signing.
+      - optional:aws-secretsmanager:/solidaria/prod/identity-access-service/signing-key-previous?prefix=signing.previous-
+      - aws-secretsmanager:/solidaria/prod/identity-access-service/clients?prefix=solidaria.clients.
       - aws-secretsmanager:/solidaria/prod/identity-access-service/ldap?prefix=ldap.
       - aws-parameterstore:/solidaria/prod/identity-access-service/cache/?prefix=cache.
       - aws-parameterstore:/solidaria/prod/identity-access-service/kafka/?prefix=kafka.
