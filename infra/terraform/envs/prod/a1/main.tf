@@ -137,7 +137,9 @@ module "alerting" {
   alert_email               = var.alert_email
   log_retention_days        = var.log_retention_days
   broker_instance_id        = var.platform_slot ? module.messaging[0].instance_id : ""
+  create_broker_alarm       = var.platform_slot
   aurora_cluster_identifier = length(var.database_services) > 0 ? module.aurora[0].cluster_identifier : ""
+  create_aurora_alarm       = length(var.database_services) > 0
 }
 
 module "eks" {
