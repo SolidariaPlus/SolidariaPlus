@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { parseRuntimeConfig } from "../config/runtime-config";
-import { deriveCodeChallenge } from "../pkce/pkce";
-import { createAuthorizationRequest, parseAuthorizationResponse } from "./authorization-request";
-import { TokenEndpoint } from "./token-endpoint";
-import { parseTokenResponse } from "./token-response";
+import type { FetchLike } from "../shared/types.js";
+import { parseRuntimeConfig } from "../config/runtime-config.js";
+import { deriveCodeChallenge } from "../pkce/pkce.js";
+import { createAuthorizationRequest, parseAuthorizationResponse } from "./authorization-request.js";
+import { TokenEndpoint } from "./token-endpoint.js";
+import { parseTokenResponse } from "./token-response.js";
 
 const config = parseRuntimeConfig({
   issuer: "https://id.test/auth/",
@@ -131,6 +132,28 @@ describe("TokenEndpoint", () => {
       code: "invalid_grant",
       status: 400,
     });
+  });
+
+  it("refreshes through the cookie without a refresh_token parameter", async () => {
+    const send = vi.fn<FetchLike>(
+      async () =>
+        new Response(JSON.stringify({ access_token: "at", token_type: "Bearer", expires_in: 600 })),
+    );
+    const endpoint = new TokenEndpoint({
+      tokenUrl: config.endpoints.token,
+      clientId: "solidaria-web",
+      fetch: send,
+      clock: () => 0,
+      sendCredentials: true,
+    });
+
+    await endpoint.refresh(undefined);
+
+    const init = send.mock.calls[0]?.[1];
+    const body = init?.body as URLSearchParams;
+    expect(body.get("grant_type")).toBe("refresh_token");
+    expect(body.has("refresh_token")).toBe(false);
+    expect(init?.credentials).toBe("include");
   });
 
   it("maps network failures to network_error", async () => {

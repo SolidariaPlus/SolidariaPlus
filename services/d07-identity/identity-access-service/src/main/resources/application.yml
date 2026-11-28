@@ -30,7 +30,7 @@ spring:
               client-id: solidaria-web
               client-authentication-methods: [none]
               authorization-grant-types: [authorization_code, refresh_token]
-              redirect-uris: ["${solidaria.clients.web-origin}/auth/callback"]
+              redirect-uris: ["${solidaria.clients.web-origin}/callback"]
               scopes: [openid, offline_access]
             require-proof-key: true
             token:
@@ -78,6 +78,7 @@ server:
   port: ${SERVER_PORT:8097}
   forward-headers-strategy: framework
   servlet:
+    context-path: /auth
     session:
       cookie:
         secure: true

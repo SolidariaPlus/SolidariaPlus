@@ -38,7 +38,7 @@
   "variable": [
     {
       "key": "baseUrl",
-      "value": "http://localhost:8097",
+      "value": "http://localhost:8097/auth",
       "type": "string"
     },
     {
@@ -48,7 +48,7 @@
     },
     {
       "key": "redirectUri",
-      "value": "http://localhost:5173/auth/callback",
+      "value": "http://localhost:5173/callback",
       "type": "string"
     },
     {
@@ -68,12 +68,12 @@
     },
     {
       "key": "memberId",
-      "value": "0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a90",
+      "value": "01930000-0000-7000-8000-000000000204",
       "type": "string"
     },
     {
       "key": "memberNumber",
-      "value": "000123",
+      "value": "1004",
       "type": "string"
     },
     {
@@ -742,14 +742,27 @@
                   "};",
                   "",
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const refreshTokenOf = (payload) => {",
+                  "  if (payload.refresh_token) return payload.refresh_token;",
+                  "  const cookie = pm.response.headers",
+                  "    .all()",
+                  "    .find((h) => h.key.toLowerCase() === \"set-cookie\" && h.value.startsWith(\"__Host-refresh=\"));",
+                  "  return cookie ? cookie.value.split(\";\")[0].substring(\"__Host-refresh=\".length) : undefined;",
+                  "};",
                   "const body = pm.response.json();",
+                  "pm.test(\"web client gets the refresh token only as an HttpOnly cookie\", () => {",
+                  "  pm.expect(body.refresh_token).to.be.undefined;",
+                  "  const cookie = pm.response.headers.all().find((h) => h.key.toLowerCase() === \"set-cookie\" && h.value.startsWith(\"__Host-refresh=\"));",
+                  "  pm.expect(cookie, \"Set-Cookie __Host-refresh\").to.exist;",
+                  "  pm.expect(cookie.value).to.match(/HttpOnly/i).and.to.match(/Secure/i).and.to.match(/SameSite=Strict/i);",
+                  "});",
                   "pm.test(\"returns access, refresh and ID tokens\", () => {",
                   "  pm.expect(body.access_token).to.be.a(\"string\");",
-                  "  pm.expect(body.refresh_token).to.be.a(\"string\");",
+                  "  pm.expect(refreshTokenOf(body)).to.be.a(\"string\");",
                   "  pm.expect(body.id_token).to.be.a(\"string\");",
                   "});",
                   "pm.collectionVariables.set(\"tellerAccessToken\", body.access_token);",
-                  "pm.collectionVariables.set(\"tellerRefreshToken\", body.refresh_token);",
+                  "pm.collectionVariables.set(\"tellerRefreshToken\", refreshTokenOf(body));",
                   "const claims = decodeJwt(body.access_token);",
                   "console.log(\"teller access token claims\", JSON.stringify(claims));",
                   "pm.test(\"amr includes mfa\", () => pm.expect(claims.amr).to.include(\"mfa\"));"
@@ -1160,14 +1173,27 @@
                   "};",
                   "",
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const refreshTokenOf = (payload) => {",
+                  "  if (payload.refresh_token) return payload.refresh_token;",
+                  "  const cookie = pm.response.headers",
+                  "    .all()",
+                  "    .find((h) => h.key.toLowerCase() === \"set-cookie\" && h.value.startsWith(\"__Host-refresh=\"));",
+                  "  return cookie ? cookie.value.split(\";\")[0].substring(\"__Host-refresh=\".length) : undefined;",
+                  "};",
                   "const body = pm.response.json();",
+                  "pm.test(\"web client gets the refresh token only as an HttpOnly cookie\", () => {",
+                  "  pm.expect(body.refresh_token).to.be.undefined;",
+                  "  const cookie = pm.response.headers.all().find((h) => h.key.toLowerCase() === \"set-cookie\" && h.value.startsWith(\"__Host-refresh=\"));",
+                  "  pm.expect(cookie, \"Set-Cookie __Host-refresh\").to.exist;",
+                  "  pm.expect(cookie.value).to.match(/HttpOnly/i).and.to.match(/Secure/i).and.to.match(/SameSite=Strict/i);",
+                  "});",
                   "pm.test(\"returns access, refresh and ID tokens\", () => {",
                   "  pm.expect(body.access_token).to.be.a(\"string\");",
-                  "  pm.expect(body.refresh_token).to.be.a(\"string\");",
+                  "  pm.expect(refreshTokenOf(body)).to.be.a(\"string\");",
                   "  pm.expect(body.id_token).to.be.a(\"string\");",
                   "});",
                   "pm.collectionVariables.set(\"boardAccessToken\", body.access_token);",
-                  "pm.collectionVariables.set(\"boardRefreshToken\", body.refresh_token);",
+                  "pm.collectionVariables.set(\"boardRefreshToken\", refreshTokenOf(body));",
                   "const claims = decodeJwt(body.access_token);",
                   "console.log(\"board access token claims\", JSON.stringify(claims));",
                   "pm.test(\"amr includes mfa\", () => pm.expect(claims.amr).to.include(\"mfa\"));"
@@ -1213,6 +1239,51 @@
                   "pm.test(\"returns the code and its expiry\", () => {",
                   "  pm.expect(body.memberId).to.eql(pm.collectionVariables.get(\"memberId\"));",
                   "  pm.expect(body.code).to.be.a(\"string\");",
+                  "  pm.expect(body.expiresAt).to.be.a(\"string\");",
+                  "});",
+                  "pm.test(\"Location and no-store\", () => {",
+                  "  pm.expect(pm.response.headers.get(\"Location\")).to.include(\"/activation-codes/\" + body.activationCodeId);",
+                  "  pm.expect(pm.response.headers.get(\"Cache-Control\")).to.include(\"no-store\");",
+                  "});",
+                  "pm.collectionVariables.set(\"activationCode\", body.code);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Issue activation code by member number (teller)",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/members/by-number/{{memberNumber}}/activation-codes",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tellerAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 201\", () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test(\"returns the code for the member number\", () => {",
+                  "  pm.expect(body.memberNumber).to.eql(pm.collectionVariables.get(\"memberNumber\"));",
+                  "  pm.expect(body.memberId).to.eql(pm.collectionVariables.get(\"memberId\"));",
+                  "  pm.expect(body.code).to.match(/^[A-HJ-NP-Z2-9]{8}$/);",
                   "  pm.expect(body.expiresAt).to.be.a(\"string\");",
                   "});",
                   "pm.test(\"Location and no-store\", () => {",
@@ -1595,14 +1666,27 @@
                   "};",
                   "",
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const refreshTokenOf = (payload) => {",
+                  "  if (payload.refresh_token) return payload.refresh_token;",
+                  "  const cookie = pm.response.headers",
+                  "    .all()",
+                  "    .find((h) => h.key.toLowerCase() === \"set-cookie\" && h.value.startsWith(\"__Host-refresh=\"));",
+                  "  return cookie ? cookie.value.split(\";\")[0].substring(\"__Host-refresh=\".length) : undefined;",
+                  "};",
                   "const body = pm.response.json();",
+                  "pm.test(\"web client gets the refresh token only as an HttpOnly cookie\", () => {",
+                  "  pm.expect(body.refresh_token).to.be.undefined;",
+                  "  const cookie = pm.response.headers.all().find((h) => h.key.toLowerCase() === \"set-cookie\" && h.value.startsWith(\"__Host-refresh=\"));",
+                  "  pm.expect(cookie, \"Set-Cookie __Host-refresh\").to.exist;",
+                  "  pm.expect(cookie.value).to.match(/HttpOnly/i).and.to.match(/Secure/i).and.to.match(/SameSite=Strict/i);",
+                  "});",
                   "pm.test(\"returns access, refresh and ID tokens\", () => {",
                   "  pm.expect(body.access_token).to.be.a(\"string\");",
-                  "  pm.expect(body.refresh_token).to.be.a(\"string\");",
+                  "  pm.expect(refreshTokenOf(body)).to.be.a(\"string\");",
                   "  pm.expect(body.id_token).to.be.a(\"string\");",
                   "});",
                   "pm.collectionVariables.set(\"memberAccessToken\", body.access_token);",
-                  "pm.collectionVariables.set(\"memberRefreshToken\", body.refresh_token);",
+                  "pm.collectionVariables.set(\"memberRefreshToken\", refreshTokenOf(body));",
                   "const claims = decodeJwt(body.access_token);",
                   "console.log(\"member access token claims\", JSON.stringify(claims));",
                   "pm.test(\"amr is pwd\", () => pm.expect(claims.amr).to.include(\"pwd\"));"
@@ -1731,6 +1815,73 @@
                 "exec": [
                   "pm.test(\"status 404\", () => pm.response.to.have.status(404));",
                   "pm.test(\"problem code MEMBER_NOT_FOUND\", () => pm.expect(pm.response.json().code).to.eql(\"MEMBER_NOT_FOUND\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Issue activation code by member number as member",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/members/by-number/{{memberNumber}}/activation-codes",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{memberAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test(\"status 403\", () => pm.response.to.have.status(403));"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Issue activation code for unknown member number",
+          "protocolProfileBehavior": {
+            "followRedirects": false,
+            "disableCookies": true
+          },
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/members/by-number/9999999998/activation-codes",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tellerAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"status 404 MEMBER_NOT_FOUND\", () => {",
+                  "  pm.response.to.have.status(404);",
+                  "  pm.expect(pm.response.json().code).to.eql(\"MEMBER_NOT_FOUND\");",
+                  "});"
                 ]
               }
             }
@@ -2276,11 +2427,18 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"status 200\", () => pm.response.to.have.status(200));",
+                  "const refreshTokenOf = (payload) => {",
+                  "  if (payload.refresh_token) return payload.refresh_token;",
+                  "  const cookie = pm.response.headers",
+                  "    .all()",
+                  "    .find((h) => h.key.toLowerCase() === \"set-cookie\" && h.value.startsWith(\"__Host-refresh=\"));",
+                  "  return cookie ? cookie.value.split(\";\")[0].substring(\"__Host-refresh=\".length) : undefined;",
+                  "};",
                   "const body = pm.response.json();",
-                  "pm.test(\"rotates the refresh token\", () => pm.expect(body.refresh_token).to.not.eql(pm.collectionVariables.get(\"memberRefreshToken\")));",
+                  "pm.test(\"rotates the refresh token\", () => pm.expect(refreshTokenOf(body)).to.not.eql(pm.collectionVariables.get(\"memberRefreshToken\")));",
                   "pm.collectionVariables.set(\"memberPreviousRefreshToken\", pm.collectionVariables.get(\"memberRefreshToken\"));",
                   "pm.collectionVariables.set(\"memberAccessToken\", body.access_token);",
-                  "pm.collectionVariables.set(\"memberRefreshToken\", body.refresh_token);"
+                  "pm.collectionVariables.set(\"memberRefreshToken\", refreshTokenOf(body));"
                 ]
               }
             }
@@ -2444,7 +2602,7 @@
           ]
         },
         {
-          "name": "Sign out current session (board)",
+          "name": "Sign out all sessions (board)",
           "protocolProfileBehavior": {
             "followRedirects": false,
             "disableCookies": true
@@ -2452,7 +2610,8 @@
           "request": {
             "method": "DELETE",
             "header": [],
-            "url": "{{baseUrl}}/sessions/current",
+            "url": "{{baseUrl}}/sessions",
+            "description": "Ends every session of the caller. The access token stays valid until it expires (10 minutes, stateless JWT).",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -2526,7 +2685,7 @@
           ]
         },
         {
-          "name": "Sign out all sessions (board)",
+          "name": "Sign out current session with a revoked token (board)",
           "protocolProfileBehavior": {
             "followRedirects": false,
             "disableCookies": true
@@ -2534,8 +2693,7 @@
           "request": {
             "method": "DELETE",
             "header": [],
-            "url": "{{baseUrl}}/sessions",
-            "description": "Ends every session of the caller. The access token stays valid until it expires (10 minutes, stateless JWT).",
+            "url": "{{baseUrl}}/sessions/current",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -2552,7 +2710,9 @@
               "listen": "test",
               "script": {
                 "type": "text/javascript",
-                "exec": ["pm.test(\"status 204\", () => pm.response.to.have.status(204));"]
+                "exec": [
+                  "pm.test(\"revoked session is refused\", () => pm.response.to.have.status(401));"
+                ]
               }
             }
           ]

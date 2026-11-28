@@ -1,5 +1,5 @@
-import { base64UrlDecodeToString } from "../crypto/base64url";
-import { AuthError } from "../errors/auth-error";
+import { base64UrlDecodeToString } from "../crypto/base64url.js";
+import { AuthError } from "../errors/auth-error.js";
 
 export interface AuthClaims {
   readonly subject: string;
@@ -7,6 +7,9 @@ export interface AuthClaims {
   readonly functions: readonly string[];
   readonly memberId: string | undefined;
   readonly expiresAt: number | undefined;
+  readonly authenticatedAt: number | undefined;
+  readonly authenticationMethods: readonly string[];
+  readonly sessionId: string | undefined;
 }
 
 export function decodeJwtPayload(token: string): Record<string, unknown> {
@@ -29,12 +32,17 @@ export function parseClaims(accessToken: string): AuthClaims {
   if (typeof subject !== "string" || subject.length === 0) throw invalid("sub is missing");
   const memberId = payload["mid"];
   const expiration = payload["exp"];
+  const authTime = payload["auth_time"];
+  const sessionId = payload["sid"];
   return Object.freeze({
     subject,
     roles: Object.freeze(stringList(payload["roles"])),
     functions: Object.freeze(stringList(payload["fn"])),
     memberId: typeof memberId === "string" && memberId.length > 0 ? memberId : undefined,
     expiresAt: typeof expiration === "number" ? expiration * 1000 : undefined,
+    authenticatedAt: typeof authTime === "number" ? authTime * 1000 : undefined,
+    authenticationMethods: Object.freeze(stringList(payload["amr"])),
+    sessionId: typeof sessionId === "string" && sessionId.length > 0 ? sessionId : undefined,
   });
 }
 
@@ -48,6 +56,10 @@ export function hasAnyRole(claims: AuthClaims | undefined, roles: readonly strin
 
 export function hasFunction(claims: AuthClaims | undefined, fn: string): boolean {
   return claims?.functions.includes(fn) ?? false;
+}
+
+export function usedSecondFactor(claims: AuthClaims | undefined): boolean {
+  return claims?.authenticationMethods.includes("mfa") ?? false;
 }
 
 export function isMember(claims: AuthClaims | undefined): boolean {

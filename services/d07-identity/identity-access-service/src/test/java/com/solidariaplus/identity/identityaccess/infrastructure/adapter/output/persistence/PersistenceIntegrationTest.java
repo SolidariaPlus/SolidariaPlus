@@ -189,7 +189,8 @@ class PersistenceIntegrationTest extends ServiceIntegrationTest {
         assertThat(jdbc.sql("SELECT client_id FROM oauth2_registered_client")
                         .query(String.class)
                         .list())
-                .containsExactlyInAnyOrder("solidaria-web", "solidaria-mobile", "solidaria-desktop");
+                .containsExactlyInAnyOrder(
+                        "solidaria-web", "solidaria-mobile", "solidaria-desktop", "solidaria-services");
     }
 
     @Test

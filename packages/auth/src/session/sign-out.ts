@@ -1,4 +1,4 @@
-import type { FetchLike } from "../shared/types";
+import type { FetchLike } from "../shared/types.js";
 
 export type SignOutScope = "current" | "all";
 

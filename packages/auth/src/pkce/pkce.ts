@@ -1,5 +1,5 @@
-import { base64UrlEncode } from "../crypto/base64url";
-import { webCryptoProvider, type CryptoProvider } from "../crypto/crypto-provider";
+import { base64UrlEncode } from "../crypto/base64url.js";
+import { webCryptoProvider, type CryptoProvider } from "../crypto/crypto-provider.js";
 
 export const PKCE_METHOD = "S256";
 

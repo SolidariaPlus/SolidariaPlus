@@ -1,7 +1,7 @@
-import { AuthError } from "../errors/auth-error";
-import type { TokenRefresher } from "../oauth/token-endpoint";
-import type { TokenSet } from "../oauth/token-response";
-import type { RefreshTokenVault } from "../platform/platform-adapter";
+import { AuthError } from "../errors/auth-error.js";
+import type { TokenRefresher } from "../oauth/token-endpoint.js";
+import type { TokenSet } from "../oauth/token-response.js";
+import type { RefreshTokenVault } from "../platform/platform-adapter.js";
 
 export class TokenRenewer {
   private readonly refresher: TokenRefresher;
@@ -22,7 +22,7 @@ export class TokenRenewer {
 
   private async run(): Promise<TokenSet> {
     const refreshToken = await this.vault.read();
-    if (!refreshToken)
+    if (!refreshToken && !this.vault.managedByCookie)
       throw new AuthError("session_expired", "There is no refresh token to renew the session");
     try {
       const tokens = await this.refresher.refresh(refreshToken);

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { CryptoProvider } from "../crypto/crypto-provider";
-import { webCryptoProvider } from "../crypto/crypto-provider";
-import { createNonce, createPkcePair, createState, deriveCodeChallenge, PKCE_METHOD } from "./pkce";
+import type { CryptoProvider } from "../crypto/crypto-provider.js";
+import { webCryptoProvider } from "../crypto/crypto-provider.js";
+import {
+  createNonce,
+  createPkcePair,
+  createState,
+  deriveCodeChallenge,
+  PKCE_METHOD,
+} from "./pkce.js";
 
 const UNRESERVED = /^[A-Za-z0-9\-._~]+$/;
 

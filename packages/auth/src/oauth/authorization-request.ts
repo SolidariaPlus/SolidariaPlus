@@ -1,7 +1,7 @@
-import type { AuthRuntimeConfig } from "../config/runtime-config";
-import { webCryptoProvider, type CryptoProvider } from "../crypto/crypto-provider";
-import { AuthError } from "../errors/auth-error";
-import { createNonce, createPkcePair, createState } from "../pkce/pkce";
+import type { AuthRuntimeConfig } from "../config/runtime-config.js";
+import { webCryptoProvider, type CryptoProvider } from "../crypto/crypto-provider.js";
+import { AuthError } from "../errors/auth-error.js";
+import { createNonce, createPkcePair, createState } from "../pkce/pkce.js";
 
 export interface AuthorizationTransaction {
   readonly state: string;

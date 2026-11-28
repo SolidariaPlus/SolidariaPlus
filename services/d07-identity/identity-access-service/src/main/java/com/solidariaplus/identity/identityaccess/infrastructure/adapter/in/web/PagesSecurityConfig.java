@@ -10,17 +10,9 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.ExceptionMappingAuthenticationFailureHandler;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.servlet.config.annotation.ViewControllerRegistry;
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
 @Configuration(proxyBeanMethods = false)
-class PagesSecurityConfig implements WebMvcConfigurer {
-
-    @Override
-    public void addViewControllers(ViewControllerRegistry registry) {
-        registry.addViewController("/login").setViewName("login");
-        registry.addViewController("/activate").setViewName("activate");
-    }
+class PagesSecurityConfig {
 
     @Bean
     @Order(3)
@@ -33,7 +25,13 @@ class PagesSecurityConfig implements WebMvcConfigurer {
         failureHandler.setExceptionMappings(Map.of(LockedException.class.getName(), "/login?error=locked"));
         http.addFilterBefore(new SignInRateLimitFilter(rateLimit), UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(requests -> requests.requestMatchers(
-                                "/login", "/activate", "/mfa", "/error", "/actuator/health/**", "/actuator/prometheus")
+                                "/login",
+                                "/activate",
+                                "/mfa",
+                                "/portal/**",
+                                "/error",
+                                "/actuator/health/**",
+                                "/actuator/prometheus")
                         .permitAll()
                         .anyRequest()
                         .authenticated())

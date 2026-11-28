@@ -1,0 +1,7 @@
+{
+  "issuer": "http://localhost:5173/auth",
+  "clientId": "solidaria-web",
+  "redirectUri": "http://localhost:5173/callback",
+  "apiEndpoint": "http://localhost:5173/api",
+  "scopes": ["openid", "offline_access"]
+}

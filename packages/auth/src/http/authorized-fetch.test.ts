@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { AuthError } from "../errors/auth-error";
-import type { FetchLike } from "../shared/types";
-import { createAuthorizedFetch, type AccessTokenProvider } from "./authorized-fetch";
+import { AuthError } from "../errors/auth-error.js";
+import type { FetchLike } from "../shared/types.js";
+import { createAuthorizedFetch, type AccessTokenProvider } from "./authorized-fetch.js";
 
 function tokens(overrides: Partial<AccessTokenProvider> = {}): AccessTokenProvider {
   return {

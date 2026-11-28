@@ -15,7 +15,17 @@ export const DOMAIN_ERROR_CODES = [
   "AUTH_ACCOUNT_LOCKED",
   "AUTH_ACTIVATION_CODE_INVALID",
   "AUTH_MFA_REQUIRED",
+  "UNAUTHENTICATED",
+  "MEMBER_NOT_FOUND",
+  "MEMBER_NOT_ELIGIBLE",
+  "NOT_FOUND",
+  "SAME_PERSON_NOT_ALLOWED",
+  "VALIDATION_FAILED",
+  "RATE_LIMITED",
+  "FORBIDDEN",
 ] as const;
+
+export const SIGN_IN_PAGE_ERROR_CODES = ["credentials", "locked"] as const;
 
 export const CLIENT_ERROR_CODES = [
   "state_mismatch",
@@ -29,12 +39,15 @@ export const CLIENT_ERROR_CODES = [
 export type OAuthErrorCode = (typeof OAUTH_ERROR_CODES)[number];
 export type DomainErrorCode = (typeof DOMAIN_ERROR_CODES)[number];
 export type ClientErrorCode = (typeof CLIENT_ERROR_CODES)[number];
-export type AuthErrorCode = OAuthErrorCode | DomainErrorCode | ClientErrorCode;
+export type SignInPageErrorCode = (typeof SIGN_IN_PAGE_ERROR_CODES)[number];
+export type AuthErrorCode =
+  OAuthErrorCode | DomainErrorCode | ClientErrorCode | SignInPageErrorCode;
 
 const KNOWN_CODES: ReadonlySet<string> = new Set<string>([
   ...OAUTH_ERROR_CODES,
   ...DOMAIN_ERROR_CODES,
   ...CLIENT_ERROR_CODES,
+  ...SIGN_IN_PAGE_ERROR_CODES,
 ]);
 
 const SIGN_IN_REQUIRED_CODES: ReadonlySet<string> = new Set<string>([
@@ -73,7 +86,12 @@ export class AuthError extends Error {
 }
 
 export function isAuthError(value: unknown): value is AuthError {
-  return value instanceof AuthError;
+  if (value instanceof AuthError) return true;
+  return (
+    value instanceof Error &&
+    value.name === "AuthError" &&
+    typeof (value as { code?: unknown }).code === "string"
+  );
 }
 
 function fallbackCode(status: number | undefined): string {

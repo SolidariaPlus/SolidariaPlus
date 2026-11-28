@@ -1,21 +1,21 @@
-import { decodeJwtPayload, parseClaims, type AuthClaims } from "./claims/claims";
-import type { AuthRuntimeConfig } from "./config/runtime-config";
-import { webCryptoProvider, type CryptoProvider } from "./crypto/crypto-provider";
-import { AuthError } from "./errors/auth-error";
-import { createAuthorizedFetch, type SignInRequiredHandler } from "./http/authorized-fetch";
+import { decodeJwtPayload, parseClaims, type AuthClaims } from "./claims/claims.js";
+import type { AuthRuntimeConfig } from "./config/runtime-config.js";
+import { webCryptoProvider, type CryptoProvider } from "./crypto/crypto-provider.js";
+import { AuthError } from "./errors/auth-error.js";
+import { createAuthorizedFetch, type SignInRequiredHandler } from "./http/authorized-fetch.js";
 import {
   createAuthorizationRequest,
   parseAuthorizationResponse,
   type AuthorizationTransaction,
-} from "./oauth/authorization-request";
-import { TokenEndpoint, type CodeExchanger } from "./oauth/token-endpoint";
-import type { TokenSet } from "./oauth/token-response";
-import type { PlatformAdapter } from "./platform/platform-adapter";
-import { InMemoryAccessTokenStore } from "./session/access-token-store";
-import { SessionManager } from "./session/session-manager";
-import { SessionRevoker, type SignOutScope } from "./session/sign-out";
-import { TokenRenewer } from "./session/token-renewer";
-import { systemClock, type Clock, type FetchLike } from "./shared/types";
+} from "./oauth/authorization-request.js";
+import { TokenEndpoint, type CodeExchanger } from "./oauth/token-endpoint.js";
+import type { TokenSet } from "./oauth/token-response.js";
+import type { PlatformAdapter } from "./platform/platform-adapter.js";
+import { InMemoryAccessTokenStore } from "./session/access-token-store.js";
+import { SessionManager } from "./session/session-manager.js";
+import { SessionRevoker, type SignOutScope } from "./session/sign-out.js";
+import { TokenRenewer } from "./session/token-renewer.js";
+import { systemClock, type Clock, type FetchLike } from "./shared/types.js";
 
 export type AuthStateListener = (claims: AuthClaims | undefined) => void;
 
@@ -160,6 +160,7 @@ export function createAuthClient(
     clientId: config.clientId,
     fetch: fetchFn,
     clock,
+    sendCredentials: platform.refreshTokenVault.managedByCookie === true,
   });
   const session = new SessionManager({
     store: new InMemoryAccessTokenStore(),

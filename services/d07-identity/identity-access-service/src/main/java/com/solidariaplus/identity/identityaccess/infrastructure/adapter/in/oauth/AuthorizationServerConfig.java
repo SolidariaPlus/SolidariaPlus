@@ -1,10 +1,12 @@
 package com.solidariaplus.identity.identityaccess.infrastructure.adapter.in.oauth;
 
+import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.solidariaplus.identity.identityaccess.application.port.in.RevokeSessionsUseCase;
 import com.solidariaplus.identity.identityaccess.application.port.in.SessionStatusUseCase;
 import com.solidariaplus.identity.identityaccess.application.port.in.SessionTokenUseCase;
+import java.util.Set;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -30,7 +32,10 @@ import org.springframework.security.oauth2.server.authorization.token.OAuth2Toke
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.header.writers.CacheControlHeadersWriter;
+import org.springframework.security.web.header.writers.DelegatingRequestMatcherHeaderWriter;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
+import org.springframework.security.web.util.matcher.NegatedRequestMatcher;
 
 @Configuration(proxyBeanMethods = false)
 class AuthorizationServerConfig {
@@ -58,18 +63,32 @@ class AuthorizationServerConfig {
                                     endpoint.accessTokenResponseHandler(new RefreshCookieTokenResponseHandler()));
                 })
                 .addFilterBefore(cookieFilter, UsernamePasswordAuthenticationFilter.class)
+                .headers(headers -> headers.cacheControl(cache -> cache.disable())
+                        .addHeaderWriter(new DelegatingRequestMatcherHeaderWriter(
+                                new NegatedRequestMatcher(DiscoveryCacheFilter.CACHED_REQUESTS),
+                                new CacheControlHeadersWriter())))
                 .authorizeHttpRequests(requests -> requests.anyRequest().authenticated())
                 .oauth2ResourceServer(server -> server.jwt(Customizer.withDefaults()))
                 .exceptionHandling(exceptions -> exceptions.defaultAuthenticationEntryPointFor(
-                        new LoginUrlAuthenticationEntryPoint("/login"),
-                        new MediaTypeRequestMatcher(MediaType.TEXT_HTML)));
+                        new LoginUrlAuthenticationEntryPoint("/login"), browserNavigation()));
         return http.build();
+    }
+
+    private static MediaTypeRequestMatcher browserNavigation() {
+        MediaTypeRequestMatcher matcher = new MediaTypeRequestMatcher(MediaType.TEXT_HTML);
+        matcher.setIgnoredMediaTypes(Set.of(MediaType.ALL));
+        return matcher;
     }
 
     @Bean
     OAuth2TokenGenerator<?> tokenGenerator(
             JWKSource<SecurityContext> keys, OAuth2TokenCustomizer<JwtEncodingContext> claimsCustomizer) {
-        JwtGenerator jwtGenerator = new JwtGenerator(new NimbusJwtEncoder(keys));
+        NimbusJwtEncoder encoder = new NimbusJwtEncoder(keys);
+        encoder.setJwkSelector(candidates -> candidates.stream()
+                .filter(JWK::isPrivate)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("No private signing key is configured")));
+        JwtGenerator jwtGenerator = new JwtGenerator(encoder);
         jwtGenerator.setJwtCustomizer(claimsCustomizer);
         return new DelegatingOAuth2TokenGenerator(jwtGenerator, new SessionRefreshTokens());
     }

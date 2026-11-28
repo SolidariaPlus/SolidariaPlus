@@ -159,14 +159,22 @@ jobs:
         with:
           name: web-dist
           path: web-dist
-      - name: Publish to S3 and invalidate CloudFront
+      - name: Publish to S3 (Cloudflare serves the bucket as the SPA origin)
+        env:
+          WEB_ORIGIN: https://qa.solidariaplus.ec
         run: |
           bucket=$(aws ssm get-parameter --name /solidaria/qa/edge/web-bucket --query Parameter.Value --output text)
-          distribution=$(aws ssm get-parameter --name /solidaria/qa/edge/distribution-id --query Parameter.Value --output text)
+          jq -n --arg origin "$WEB_ORIGIN" '{
+            issuer: ($origin + "/auth"),
+            clientId: "solidaria-web",
+            redirectUri: ($origin + "/callback"),
+            apiEndpoint: ($origin + "/api"),
+            scopes: ["openid", "offline_access"]
+          }' > web-dist/runtime-config.json
           aws s3 sync web-dist "s3://$bucket" --delete --cache-control "public,max-age=300"
           aws s3 cp web-dist/index.html "s3://$bucket/index.html" --cache-control "no-cache"
-          aws cloudfront create-invalidation --distribution-id "$distribution" --paths '/*' >/dev/null
-          echo "Web client published: https://$(aws ssm get-parameter --name /solidaria/qa/edge/domain-name --query Parameter.Value --output text)/"
+          aws s3 cp web-dist/runtime-config.json "s3://$bucket/runtime-config.json" --cache-control "no-cache"
+          echo "Web client published to s3://$bucket; purge the Cloudflare cache of $WEB_ORIGIN if needed"
 
   manifest:
     needs: [service, web-publish]

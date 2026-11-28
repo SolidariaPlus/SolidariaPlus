@@ -25,7 +25,7 @@ ArchUnit keeps the domain free of Spring, AWS SDK and Jackson classes and enforc
 ```bash
 docker compose --profile identity up -d --wait                       # PostgreSQL, Valkey, Kafka, LocalStack
 SPRING_PROFILES_ACTIVE=local ./gradlew :identity-access-service:bootRun
-curl -s localhost:8097/actuator/health                               # {"status":"UP",...}
+curl -s localhost:8097/auth/actuator/health                               # {"status":"UP",...}
 ./gradlew :identity-access-service:build                             # tests, ArchUnit, Checkstyle, Spotless, coverage
 ```
 
@@ -98,8 +98,8 @@ Valkey keys, under the prefix `ia:` that the ACL user of MS-17 may access (ADR-0
 
 - The service is published under `/auth`; `server.forward-headers-strategy=framework` makes the issuer
   and the redirects use the public URL behind CloudFront, the HTTP API and the ALB.
-- Actuator: `/actuator/health/liveness`, `/actuator/health/readiness` (database and Valkey) and
-  `/actuator/prometheus`. Logs are ECS JSON without personal data; unhandled errors go to Sentry.
+- Actuator: `/auth/actuator/health/liveness`, `/auth/actuator/health/readiness` (database and Valkey) and
+  `/auth/actuator/prometheus`. Logs are ECS JSON without personal data; unhandled errors go to Sentry.
 - No secret is written in a file of this repository (RNF-SEG-05).
 
 ## M2M client secret (KAN-48)

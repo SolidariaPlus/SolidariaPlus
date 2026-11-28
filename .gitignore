@@ -84,3 +84,5 @@ volume/
 Thumbs.db
 .agents/
 .gemini/
+
+.claude

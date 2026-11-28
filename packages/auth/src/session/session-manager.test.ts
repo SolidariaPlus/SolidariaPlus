@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthError } from "../errors/auth-error";
-import type { TokenSet } from "../oauth/token-response";
-import { InMemoryAccessTokenStore, isExpiring } from "./access-token-store";
-import { SessionManager } from "./session-manager";
+import { AuthError } from "../errors/auth-error.js";
+import type { TokenSet } from "../oauth/token-response.js";
+import { InMemoryAccessTokenStore, isExpiring } from "./access-token-store.js";
+import { SessionManager } from "./session-manager.js";
 
 const TEN_MINUTES = 600_000;
 

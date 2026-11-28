@@ -13,6 +13,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -21,6 +22,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.core.endpoint.PkceParameterNames;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
@@ -38,7 +40,7 @@ class RefreshCookieIntegrationTest extends ServiceIntegrationTest {
     private static final String MEMBER_SUB = "01930000-0000-7000-8000-000000000101";
     private static final String WEB_CLIENT = "solidaria-web";
     private static final String MOBILE_CLIENT = "solidaria-mobile";
-    private static final String REDIRECT_URI_WEB = "http://localhost/auth/callback";
+    private static final String REDIRECT_URI_WEB = "http://localhost/callback";
     private static final String REDIRECT_URI_MOBILE = "ec.solidariaplus.mobile:/oauth2/callback";
 
     @Autowired
@@ -51,7 +53,7 @@ class RefreshCookieIntegrationTest extends ServiceIntegrationTest {
     private RegisteredClientRepository registeredClients;
 
     @Test
-    void webClient_tokenResponse_refreshTokenDeliveredAsCookieNotInBody() throws Exception {
+    void webClientTokenResponseRefreshTokenDeliveredAsCookieNotInBody() throws Exception {
         PkcePair pkce = generatePkce();
         String code = "test-cookie-" + UUID.randomUUID();
         storeAuthorization(code, pkce.challenge(), WEB_CLIENT, REDIRECT_URI_WEB);
@@ -78,7 +80,7 @@ class RefreshCookieIntegrationTest extends ServiceIntegrationTest {
     }
 
     @Test
-    void mobileClient_tokenResponse_refreshTokenInBodyNoCookie() throws Exception {
+    void mobileClientTokenResponseRefreshTokenInBodyNoCookie() throws Exception {
         PkcePair pkce = generatePkce();
         String code = "test-mobile-" + UUID.randomUUID();
         storeAuthorization(code, pkce.challenge(), MOBILE_CLIENT, REDIRECT_URI_MOBILE);
@@ -114,6 +116,20 @@ class RefreshCookieIntegrationTest extends ServiceIntegrationTest {
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizedScopes(Set.of(OidcScopes.OPENID, "offline_access"))
                 .attribute(Principal.class.getName(), principal)
+                .attribute(
+                        OAuth2AuthorizationRequest.class.getName(),
+                        OAuth2AuthorizationRequest.authorizationCode()
+                                .authorizationUri("http://localhost/oauth2/authorize")
+                                .clientId(clientId)
+                                .redirectUri(redirectUri)
+                                .scopes(Set.of(OidcScopes.OPENID, "offline_access"))
+                                .state("state")
+                                .additionalParameters(Map.of(
+                                        PkceParameterNames.CODE_CHALLENGE,
+                                        codeChallenge,
+                                        PkceParameterNames.CODE_CHALLENGE_METHOD,
+                                        "S256"))
+                                .build())
                 .attribute(OAuth2ParameterNames.REDIRECT_URI, redirectUri)
                 .attribute(PkceParameterNames.CODE_CHALLENGE, codeChallenge)
                 .attribute(PkceParameterNames.CODE_CHALLENGE_METHOD, "S256")

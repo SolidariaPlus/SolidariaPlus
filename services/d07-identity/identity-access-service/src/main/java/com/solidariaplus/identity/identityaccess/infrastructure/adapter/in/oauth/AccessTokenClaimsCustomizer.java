@@ -4,6 +4,8 @@ import com.solidariaplus.identity.identityaccess.application.port.in.TokenClaims
 import com.solidariaplus.identity.identityaccess.application.port.in.TokenClaimsUseCase.Claims;
 import com.solidariaplus.identity.identityaccess.domain.model.vo.SubjectId;
 import com.solidariaplus.identity.identityaccess.infrastructure.adapter.in.web.SignInSession;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.security.core.Authentication;
@@ -31,18 +33,18 @@ class AccessTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncodingCo
         if (!OAuth2TokenType.ACCESS_TOKEN.equals(context.getTokenType())) {
             return;
         }
-        JwtClaimsSet.Builder claims = context.getClaims().audience(List.of(AUDIENCE));
+        JwtClaimsSet.Builder claims = context.getClaims().audience(storable(List.of(AUDIENCE)));
         if (AuthorizationGrantType.CLIENT_CREDENTIALS.equals(context.getAuthorizationGrantType())) {
-            claims.claim("roles", List.of("SERVICE")).claim("amr", List.of("client_secret"));
+            claims.claim("roles", storable(List.of("SERVICE"))).claim("amr", storable(List.of("client_secret")));
             return;
         }
         Authentication principal = context.getPrincipal();
         Claims subject = tokenClaims.claimsOf(new SubjectId(UUID.fromString(principal.getName())));
-        claims.claim("roles", List.copyOf(subject.roles()))
+        claims.claim("roles", storable(subject.roles()))
                 .claim("amr", authenticationMethods(principal))
                 .claim("sid", context.getAuthorization().getId());
         if (!subject.functions().isEmpty()) {
-            claims.claim("fn", List.copyOf(subject.functions()));
+            claims.claim("fn", storable(subject.functions()));
         }
         subject.memberId()
                 .ifPresent(memberId -> claims.claim("mid", memberId.value().toString()));
@@ -51,6 +53,10 @@ class AccessTokenClaimsCustomizer implements OAuth2TokenCustomizer<JwtEncodingCo
     private static List<String> authenticationMethods(Authentication principal) {
         boolean secondFactor = principal.getAuthorities().stream()
                 .anyMatch(authority -> SignInSession.SECOND_FACTOR_AUTHORITY.equals(authority.getAuthority()));
-        return secondFactor ? List.of("pwd", "otp", "mfa") : List.of("pwd");
+        return storable(secondFactor ? List.of("pwd", "otp", "mfa") : List.of("pwd"));
+    }
+
+    private static List<String> storable(Collection<String> values) {
+        return new ArrayList<>(values);
     }
 }

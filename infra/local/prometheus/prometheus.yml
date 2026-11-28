@@ -19,12 +19,16 @@ scrape_configs:
     static_configs:
       - targets: ["rabbitmq:15692"]
 
-  - job_name: spring-boot
-    metrics_path: /actuator/prometheus
+  - job_name: identity-access-service
+    metrics_path: /auth/actuator/prometheus
     static_configs:
       - targets: ["host.docker.internal:8097"]
         labels:
           service: identity-access-service
+
+  - job_name: spring-boot
+    metrics_path: /actuator/prometheus
+    static_configs:
       - targets: ["host.docker.internal:8081"]
         labels:
           service: member-management-service

@@ -1,0 +1,16 @@
+.git
+.idea
+.vscode
+.claude
+.turbo
+.gradle
+.env
+.env.*
+!.env.example
+**/node_modules
+**/.turbo
+**/.gradle
+**/build
+**/dist
+**/coverage
+**/*.log

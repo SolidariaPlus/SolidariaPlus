@@ -1,5 +1,5 @@
-import { AuthError } from "../errors/auth-error";
-import type { FetchLike } from "../shared/types";
+import { AuthError } from "../errors/auth-error.js";
+import type { FetchLike } from "../shared/types.js";
 
 export interface AuthEndpoints {
   readonly authorization: string;

@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { AuthError } from "../errors/auth-error";
-import type { TokenSet } from "../oauth/token-response";
-import { MemoryRefreshTokenVault } from "../platform/platform-adapter";
-import { TokenRenewer } from "./token-renewer";
+import { AuthError } from "../errors/auth-error.js";
+import type { TokenSet } from "../oauth/token-response.js";
+import {
+  HttpOnlyCookieRefreshVault,
+  MemoryRefreshTokenVault,
+} from "../platform/platform-adapter.js";
+import { TokenRenewer } from "./token-renewer.js";
 
 function tokenSet(accessToken: string, refreshToken?: string): TokenSet {
   return { accessToken, refreshToken, expiresAt: 1_000_000, idToken: undefined, scope: undefined };
@@ -92,5 +95,15 @@ describe("TokenRenewer", () => {
 
     await expect(renewer.renew()).rejects.toMatchObject({ code: "temporarily_unavailable" });
     expect(await vault.read()).toBe("rt");
+  });
+
+  it("renews through the HttpOnly cookie when the vault is cookie-managed", async () => {
+    const refresher = { refresh: vi.fn(async () => tokenSet("at-cookie")) };
+    const renewer = new TokenRenewer(refresher, new HttpOnlyCookieRefreshVault());
+
+    const tokens = await renewer.renew();
+
+    expect(tokens.accessToken).toBe("at-cookie");
+    expect(refresher.refresh).toHaveBeenCalledWith(undefined);
   });
 });
