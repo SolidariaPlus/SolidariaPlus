@@ -23,9 +23,14 @@ output "http_api_routes_wired" {
   value       = module.http_api.routes_wired
 }
 
-output "cloudfront_domain" {
-  description = "Public entry point (A1 only)."
-  value       = try(module.edge[0].domain_name, null)
+output "entry_ip" {
+  description = "Static EIP of the edge proxy (A1 only). This is the IP to give the domain registrar."
+  value       = try(module.edge[0].entry_ip, null)
+}
+
+output "web_bucket_domain" {
+  description = "S3 regional domain of the web bucket; configure as Cloudflare static origin (A1 only)."
+  value       = try(module.edge[0].web_bucket_domain, null)
 }
 
 output "broker_public_ip" {

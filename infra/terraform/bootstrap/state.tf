@@ -1,27 +1,17 @@
 # Terraform state bucket of the account (KAN-2 ADR-118, KAN-11 section 6.8): versioned,
 # encrypted, private, TLS only, with native S3 locking (use_lockfile) and no DynamoDB table.
 # bootstrap.sh creates the empty bucket with the AWS CLI before the first init, because the
-# backend of this root lives in it; the import block below then adopts it.
+# backend of this root lives in it; the resources below configure it without reading it as a
+# managed resource (Learner Lab SCP denies s3:GetBucketObjectLockConfiguration, so the
+# aws_s3_bucket resource + import block cannot be used here).
 
 locals {
-  state_bucket = "solidaria-tfstate-${var.environment}-${local.slot_lower}-${local.account_id}"
-}
-
-import {
-  to = aws_s3_bucket.state
-  id = local.state_bucket
-}
-
-resource "aws_s3_bucket" "state" {
-  bucket = local.state_bucket
-
-  lifecycle {
-    prevent_destroy = true
-  }
+  state_bucket     = "solidaria-tfstate-${var.environment}-${local.slot_lower}-${local.account_id}"
+  state_bucket_arn = "arn:aws:s3:::${local.state_bucket}"
 }
 
 resource "aws_s3_bucket_versioning" "state" {
-  bucket = aws_s3_bucket.state.id
+  bucket = local.state_bucket
 
   versioning_configuration {
     status = "Enabled"
@@ -32,7 +22,7 @@ resource "aws_s3_bucket_versioning" "state" {
 # LabRole may not manage; the bucket is private, TLS only and versioned.
 #trivy:ignore:AVD-AWS-0132
 resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
-  bucket = aws_s3_bucket.state.id
+  bucket = local.state_bucket
 
   rule {
     apply_server_side_encryption_by_default {
@@ -43,7 +33,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "state" {
 }
 
 resource "aws_s3_bucket_public_access_block" "state" {
-  bucket = aws_s3_bucket.state.id
+  bucket = local.state_bucket
 
   block_public_acls       = true
   block_public_policy     = true
@@ -52,7 +42,7 @@ resource "aws_s3_bucket_public_access_block" "state" {
 }
 
 resource "aws_s3_bucket_ownership_controls" "state" {
-  bucket = aws_s3_bucket.state.id
+  bucket = local.state_bucket
 
   rule {
     object_ownership = "BucketOwnerEnforced"
@@ -60,7 +50,7 @@ resource "aws_s3_bucket_ownership_controls" "state" {
 }
 
 resource "aws_s3_bucket_lifecycle_configuration" "state" {
-  bucket = aws_s3_bucket.state.id
+  bucket = local.state_bucket
 
   rule {
     id     = "expire-old-state-versions"
@@ -85,8 +75,8 @@ data "aws_iam_policy_document" "state" {
     effect  = "Deny"
     actions = ["s3:*"]
     resources = [
-      aws_s3_bucket.state.arn,
-      "${aws_s3_bucket.state.arn}/*",
+      local.state_bucket_arn,
+      "${local.state_bucket_arn}/*",
     ]
 
     principals {
@@ -103,7 +93,7 @@ data "aws_iam_policy_document" "state" {
 }
 
 resource "aws_s3_bucket_policy" "state" {
-  bucket = aws_s3_bucket.state.id
+  bucket = local.state_bucket
   policy = data.aws_iam_policy_document.state.json
 
   depends_on = [aws_s3_bucket_public_access_block.state]

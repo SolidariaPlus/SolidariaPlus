@@ -137,7 +137,9 @@ module "alerting" {
   alert_email               = var.alert_email
   log_retention_days        = var.log_retention_days
   broker_instance_id        = var.platform_slot ? module.messaging[0].instance_id : ""
+  create_broker_alarm       = var.platform_slot
   aurora_cluster_identifier = length(var.database_services) > 0 ? module.aurora[0].cluster_identifier : ""
+  create_aurora_alarm       = length(var.database_services) > 0
 }
 
 module "eks" {
@@ -295,6 +297,8 @@ module "edge" {
   name         = local.name
   environment  = var.environment
   api_endpoint = module.http_api.api_endpoint
+  vpc_id       = data.aws_vpc.this.id
+  subnet_id    = local.public_subnet_ids[0]
 }
 
 # ---------------------------------------------------------------------------------------------
@@ -316,6 +320,48 @@ module "service_settings" {
       "identity-access-service/ldap/domain-name" = module.directory[0].domain_name
     } : {},
   )
+  # MS-17 secrets that no other module writes (db: aurora, cache: valkey, kafka/users: messaging).
+  secrets = local.ms17 ? {
+    "identity-access-service/signing-key" = "ES256 signing key of the authorization server: kid, privateKey (PKCS#8 DER, Base64), publicKey (SPKI DER, Base64)"
+    "identity-access-service/clients"     = "Credentials of the M2M client solidaria-services as read by MS-17: services-secret = {bcrypt}<hash>"
+    "identity-access-service/m2m-client"  = "Plain credentials of the M2M client solidaria-services for the calling services: clientId, clientSecret"
+    "identity-access-service/ldap"        = "Bind account of MS-17 in the staff directory: username, password (set by hand)"
+  } : {}
+  initial_values = local.ms17 ? {
+    "identity-access-service/signing-key" = local.ms17_signing_key
+    "identity-access-service/clients"     = jsonencode({ "services-secret" = "{bcrypt}${bcrypt(random_password.ms17_services_client[0].result, 10)}" })
+    "identity-access-service/m2m-client"  = jsonencode({ clientId = "solidaria-services", clientSecret = random_password.ms17_services_client[0].result })
+    "identity-access-service/ldap"        = jsonencode({ username = "PENDING", password = "PENDING" })
+  } : {}
+}
+
+# ---------------------------------------------------------------------------------------------
+# Generated MS-17 secrets (KAN-51). Written once through service_settings.initial_values; later
+# rotations are done by hand (MS-17 README) and Terraform keeps them (ignore_changes).
+# The values live in the encrypted, private state bucket, like the Aurora and Valkey passwords.
+# ---------------------------------------------------------------------------------------------
+locals {
+  ms17 = contains(var.services, "identity-access-service")
+  ms17_signing_key = local.ms17 ? jsonencode({
+    kid = "${var.environment}-${substr(sha256(tls_private_key.ms17_signing[0].public_key_pem), 0, 8)}"
+    # PEM body without the BEGIN/END lines and the line breaks = DER in Base64.
+    privateKey = replace(tls_private_key.ms17_signing[0].private_key_pem_pkcs8, "/-----[A-Z ]+-----|\\s/", "")
+    publicKey  = replace(tls_private_key.ms17_signing[0].public_key_pem, "/-----[A-Z ]+-----|\\s/", "")
+  }) : ""
+}
+
+resource "tls_private_key" "ms17_signing" {
+  count = local.ms17 ? 1 : 0
+
+  algorithm   = "ECDSA"
+  ecdsa_curve = "P256"
+}
+
+resource "random_password" "ms17_services_client" {
+  count = local.ms17 ? 1 : 0
+
+  length  = 48
+  special = false
 }
 
 # Values that the workflows and the platform root read (no account ids in workflows).

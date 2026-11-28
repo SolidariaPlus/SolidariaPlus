@@ -24,21 +24,25 @@ data "aws_ssm_parameter" "al2023" {
 }
 
 locals {
-  prefix       = "/solidaria/${var.environment}/broker"
-  kafka_users  = [for line in split("\n", file("${var.messaging_dir}/kafka/users.conf")) : trimspace(line) if trimspace(line) != "" && !startswith(trimspace(line), "#")]
-  upload_files = fileset(var.messaging_dir, "**")
+  prefix = "/solidaria/${var.environment}/broker"
+  # Learner Lab SCP denies s3:GetBucketObjectLockConfiguration; computed by name to avoid aws_s3_bucket refresh.
+  artifacts_bucket = "${var.name}-broker-${data.aws_caller_identity.current.account_id}"
+  kafka_users      = [for line in split("\n", file("${var.messaging_dir}/kafka/users.conf")) : trimspace(line) if trimspace(line) != "" && !startswith(trimspace(line), "#")]
+  upload_files     = fileset(var.messaging_dir, "**")
 }
 
 # ---------------------------------------------------------------------------------------------
 # Definitions and scripts, uploaded from infra/messaging; the instance syncs them at every boot.
 # ---------------------------------------------------------------------------------------------
-resource "aws_s3_bucket" "artifacts" {
-  bucket        = "${var.name}-broker-${data.aws_caller_identity.current.account_id}"
-  force_destroy = true
-}
+
+# Learner Lab SCP denies s3:GetBucketObjectLockConfiguration. The bucket is created once
+# via the CLI (same pattern as the state bucket) and referenced by name here to avoid the
+# blocked API call. Create the bucket before the first apply:
+#   aws s3api create-bucket --bucket <artifacts_bucket> --region us-west-2 \
+#     --create-bucket-configuration LocationConstraint=us-west-2
 
 resource "aws_s3_bucket_public_access_block" "artifacts" {
-  bucket = aws_s3_bucket.artifacts.id
+  bucket = local.artifacts_bucket
 
   block_public_acls       = true
   block_public_policy     = true
@@ -47,7 +51,7 @@ resource "aws_s3_bucket_public_access_block" "artifacts" {
 }
 
 resource "aws_s3_bucket_versioning" "artifacts" {
-  bucket = aws_s3_bucket.artifacts.id
+  bucket = local.artifacts_bucket
 
   versioning_configuration {
     status = "Enabled"
@@ -57,7 +61,7 @@ resource "aws_s3_bucket_versioning" "artifacts" {
 resource "aws_s3_object" "messaging" {
   for_each = local.upload_files
 
-  bucket      = aws_s3_bucket.artifacts.id
+  bucket      = local.artifacts_bucket
   key         = "messaging/${each.value}"
   source      = "${var.messaging_dir}/${each.value}"
   source_hash = filemd5("${var.messaging_dir}/${each.value}")
@@ -198,7 +202,7 @@ resource "aws_instance" "broker" {
   user_data = templatefile("${path.module}/templates/broker-user-data.sh.tftpl", {
     environment     = var.environment
     region          = data.aws_region.current.region
-    artifact_bucket = aws_s3_bucket.artifacts.id
+    artifact_bucket = local.artifacts_bucket
     kafka_image     = var.kafka_image
     rabbitmq_image  = var.rabbitmq_image
     jwks_url        = var.rabbitmq_jwks_url

@@ -1,11 +1,12 @@
 # Client entry of the environment, in A1 (KAN-32; KAN-2 section 4.2, section 6.4, ADR-115).
-#   CloudFront ── default behavior ──> private S3 bucket of the web client (origin access control)
-#              └─ /auth/*, /api/*  ──> HTTP API of A1 > VPC link > ALB
-# CloudFront adds a secret origin header (X-Origin-Verify) on the API origin. The HTTP API forwards
-# it, and the ALB listener rule of the shared Helm chart accepts only requests that carry it, so
-# the HTTP API URL cannot be used to bypass CloudFront.
-# Cloudflare goes in front of CloudFront once the domain is delegated (OI-19); until then the
-# entry point is the CloudFront domain. No resource here has an hourly price.
+# Cloudflare sits in front as CDN/WAF (OI-19). It routes:
+#   /* (SPA)        → S3 web bucket (Cloudflare R2 mirror or direct S3 origin)
+#   /auth/*, /api/* → HTTP API endpoint → VPC Link → ALB
+#
+# CloudFront was removed: Cloudflare replaces it with equivalent WAF, caching, and HTTPS
+# termination at zero additional AWS hourly cost. The X-Origin-Verify secret is kept so the
+# ALB listener rule can still require an authenticated header from Cloudflare (ADR-115).
+# No resource here has an hourly price.
 
 terraform {
   required_version = ">= 1.11"
@@ -37,28 +38,30 @@ variable "api_endpoint" {
   type        = string
 }
 
-variable "price_class" {
-  description = "CloudFront price class."
+variable "vpc_id" {
+  description = "VPC where the edge proxy lives."
   type        = string
-  default     = "PriceClass_100"
+}
+
+variable "subnet_id" {
+  description = "Public subnet for the edge proxy EC2."
+  type        = string
 }
 
 data "aws_caller_identity" "current" {}
 
+data "aws_ssm_parameter" "al2023" {
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+}
+
 locals {
   api_domain = replace(var.api_endpoint, "https://", "")
-  # AWS managed policies
-  caching_optimized             = "658327ea-f89d-4fab-a63d-7e88639e58f6"
-  caching_disabled              = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
-  all_viewer_except_host_header = "b689b0a8-53d0-40ab-baf2-68738e2966ac"
-  security_headers              = "67f7725c-6f97-4210-82d7-5512b31e9d03"
 }
 
 module "web_bucket" {
   source = "../s3-bucket"
 
-  name          = "${var.name}-web-${data.aws_caller_identity.current.account_id}"
-  force_destroy = var.environment != "prod"
+  name = "${var.name}-web-${data.aws_caller_identity.current.account_id}"
 }
 
 resource "random_password" "origin_verify" {
@@ -68,7 +71,7 @@ resource "random_password" "origin_verify" {
 
 resource "aws_secretsmanager_secret" "origin_verify" {
   name                    = "/solidaria/${var.environment}/edge/origin-verify"
-  description             = "Value of the X-Origin-Verify header that CloudFront sends and the ALB requires."
+  description             = "Value of the X-Origin-Verify header that Cloudflare sends and the ALB requires."
   recovery_window_in_days = 0
 }
 
@@ -77,140 +80,93 @@ resource "aws_secretsmanager_secret_version" "origin_verify" {
   secret_string = random_password.origin_verify.result
 }
 
-resource "aws_cloudfront_origin_access_control" "web" {
-  name                              = "${var.name}-web"
-  description                       = "Web client bucket of ${var.name}"
-  origin_access_control_origin_type = "s3"
-  signing_behavior                  = "always"
-  signing_protocol                  = "sigv4"
-}
+# ---------------------------------------------------------------------------------------------
+# Edge proxy: permanent EIP + nginx EC2. Clients reach this IP; Cloudflare connects to it.
+# The EIP is never released between sessions — give it to the domain registrar as the A record.
+# ---------------------------------------------------------------------------------------------
 
-resource "aws_cloudfront_distribution" "this" {
-  enabled             = true
-  comment             = "Solidaria+ ${var.environment} client entry"
-  default_root_object = "index.html"
-  price_class         = var.price_class
-  http_version        = "http2and3"
+resource "aws_eip" "entry" {
+  domain = "vpc"
 
-  origin {
-    origin_id                = "web"
-    domain_name              = module.web_bucket.regional_domain_name
-    origin_access_control_id = aws_cloudfront_origin_access_control.web.id
-  }
-
-  origin {
-    origin_id   = "api"
-    domain_name = local.api_domain
-
-    custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "https-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
-    }
-
-    custom_header {
-      name  = "X-Origin-Verify"
-      value = random_password.origin_verify.result
-    }
-  }
-
-  default_cache_behavior {
-    target_origin_id           = "web"
-    viewer_protocol_policy     = "redirect-to-https"
-    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
-    cached_methods             = ["GET", "HEAD"]
-    compress                   = true
-    cache_policy_id            = local.caching_optimized
-    response_headers_policy_id = local.security_headers
-  }
-
-  dynamic "ordered_cache_behavior" {
-    for_each = ["/auth/*", "/api/*"]
-
-    content {
-      path_pattern             = ordered_cache_behavior.value
-      target_origin_id         = "api"
-      viewer_protocol_policy   = "https-only"
-      allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
-      cached_methods           = ["GET", "HEAD"]
-      compress                 = true
-      cache_policy_id          = local.caching_disabled
-      origin_request_policy_id = local.all_viewer_except_host_header
-    }
-  }
-
-  # Client-side routing of the single-page application.
-  custom_error_response {
-    error_code         = 403
-    response_code      = 200
-    response_page_path = "/index.html"
-  }
-
-  custom_error_response {
-    error_code         = 404
-    response_code      = 200
-    response_page_path = "/index.html"
-  }
-
-  restrictions {
-    geo_restriction {
-      restriction_type = "none"
-    }
-  }
-
-  viewer_certificate {
-    cloudfront_default_certificate = true
+  tags = {
+    Name = "${var.name}-entry"
   }
 }
 
-data "aws_iam_policy_document" "web" {
-  statement {
-    sid       = "CloudFrontRead"
-    actions   = ["s3:GetObject"]
-    resources = ["${module.web_bucket.arn}/*"]
+#trivy:ignore:AVD-AWS-0104
+resource "aws_security_group" "edge_proxy" {
+  name        = "${var.name}-edge-proxy"
+  description = "Edge proxy EC2; admits HTTP/HTTPS from the internet and all egress."
+  vpc_id      = var.vpc_id
 
-    principals {
-      type        = "Service"
-      identifiers = ["cloudfront.amazonaws.com"]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "AWS:SourceArn"
-      values   = [aws_cloudfront_distribution.this.arn]
-    }
-  }
-
-  statement {
-    sid       = "DenyInsecureTransport"
-    effect    = "Deny"
-    actions   = ["s3:*"]
-    resources = [module.web_bucket.arn, "${module.web_bucket.arn}/*"]
-
-    principals {
-      type        = "*"
-      identifiers = ["*"]
-    }
-
-    condition {
-      test     = "Bool"
-      variable = "aws:SecureTransport"
-      values   = ["false"]
-    }
+  tags = {
+    Name = "${var.name}-edge-proxy"
   }
 }
 
-resource "aws_s3_bucket_policy" "web" {
-  bucket = module.web_bucket.id
-  policy = data.aws_iam_policy_document.web.json
+resource "aws_vpc_security_group_ingress_rule" "edge_proxy_http" {
+  security_group_id = aws_security_group.edge_proxy.id
+  description       = "HTTP from Cloudflare / domain registrar"
+  ip_protocol       = "tcp"
+  from_port         = 80
+  to_port           = 80
+  cidr_ipv4         = "0.0.0.0/0"
 }
+
+resource "aws_vpc_security_group_ingress_rule" "edge_proxy_https" {
+  security_group_id = aws_security_group.edge_proxy.id
+  description       = "HTTPS from Cloudflare"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+resource "aws_vpc_security_group_egress_rule" "edge_proxy_all" {
+  security_group_id = aws_security_group.edge_proxy.id
+  description       = "Outbound to API Gateway and S3"
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+resource "aws_instance" "edge_proxy" {
+  ami                    = data.aws_ssm_parameter.al2023.value
+  instance_type          = "t3.micro"
+  subnet_id              = var.subnet_id
+  vpc_security_group_ids = [aws_security_group.edge_proxy.id]
+  iam_instance_profile   = "LabInstanceProfile"
+
+  metadata_options {
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
+
+  user_data_base64 = base64encode(templatefile("${path.module}/templates/edge-proxy-init.sh.tftpl", {
+    api_host = local.api_domain
+  }))
+
+  lifecycle {
+    ignore_changes = [ami, user_data]
+  }
+
+  tags = {
+    Name = "${var.name}-edge-proxy"
+  }
+}
+
+resource "aws_eip_association" "entry" {
+  allocation_id = aws_eip.entry.id
+  instance_id   = aws_instance.edge_proxy.id
+}
+
+# ---------------------------------------------------------------------------------------------
 
 resource "aws_ssm_parameter" "edge" {
   for_each = {
-    "web-bucket"      = module.web_bucket.id
-    "distribution-id" = aws_cloudfront_distribution.this.id
-    "domain-name"     = aws_cloudfront_distribution.this.domain_name
+    "entry-ip"          = aws_eip.entry.public_ip
+    "web-bucket"        = module.web_bucket.id
+    "web-bucket-domain" = module.web_bucket.regional_domain_name
+    "api-endpoint"      = var.api_endpoint
   }
 
   name  = "/solidaria/${var.environment}/edge/${each.key}"
@@ -218,22 +174,17 @@ resource "aws_ssm_parameter" "edge" {
   value = each.value
 }
 
-output "distribution_id" {
-  description = "CloudFront distribution (deploy-qa.yml invalidates it after publishing the web build)."
-  value       = aws_cloudfront_distribution.this.id
-}
-
-output "domain_name" {
-  description = "Public entry point of the environment."
-  value       = aws_cloudfront_distribution.this.domain_name
+output "entry_ip" {
+  description = "Static EIP of the edge proxy. Give this IP to the domain registrar as the A record."
+  value       = aws_eip.entry.public_ip
 }
 
 output "web_bucket" {
-  description = "Bucket of the web build."
+  description = "Bucket of the web build (Cloudflare static origin)."
   value       = module.web_bucket.id
 }
 
-output "origin_verify_secret_name" {
-  description = "Secrets Manager name of the origin header value (read by the Helm deploy for the Ingress rule)."
-  value       = aws_secretsmanager_secret.origin_verify.name
+output "web_bucket_domain" {
+  description = "Regional S3 domain for the web bucket (configure as Cloudflare static origin)."
+  value       = module.web_bucket.regional_domain_name
 }

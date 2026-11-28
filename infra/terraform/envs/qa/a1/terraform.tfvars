@@ -15,6 +15,9 @@ nat_gateway_count   = 1
 # (KAN-34) and MS-17, whose image arrives with KAN-18. MS-01 and MS-02 are added when they start.
 services = ["sample-service", "identity-access-service"]
 
+# JWKS endpoint of MS-17 used by RabbitMQ to validate JWT Bearer tokens (KAN-18 follow-up).
+rabbitmq_jwks_url = "https://qa.solidariaplus.ec/oauth2/jwks"
+
 database_services = {
   "identity-access-service" = "identity_access"
 }
