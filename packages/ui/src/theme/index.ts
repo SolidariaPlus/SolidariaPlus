@@ -5,8 +5,9 @@ export {
   fontFamilies,
   fontSizes,
   fontWeights,
-  opacities,
+  motion,
   radii,
+  shadows,
   spacing,
 } from "./tokens";
 export type { DesignTokens } from "./tokens";

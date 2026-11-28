@@ -1,7 +1,7 @@
-import type { TokenSet } from "../oauth/token-response";
-import type { Clock } from "../shared/types";
-import { isExpiring, type AccessTokenStore } from "./access-token-store";
-import type { TokenRenewer } from "./token-renewer";
+import type { TokenSet } from "../oauth/token-response.js";
+import type { Clock } from "../shared/types.js";
+import { isExpiring, type AccessTokenStore } from "./access-token-store.js";
+import type { TokenRenewer } from "./token-renewer.js";
 
 export const DEFAULT_RENEW_BEFORE_EXPIRY_MS = 60_000;
 

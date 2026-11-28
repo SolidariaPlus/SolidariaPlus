@@ -11,6 +11,7 @@ spring:
       - aws-parameterstore:/solidaria/prod/identity-access-service/cache/?prefix=cache.
       - aws-parameterstore:/solidaria/prod/identity-access-service/kafka/?prefix=kafka.
       - aws-parameterstore:/solidaria/prod/identity-access-service/ldap/?prefix=ldap.
+      - aws-parameterstore:/solidaria/prod/identity-access-service/kms/?prefix=kms.
 
 solidaria:
   clients:

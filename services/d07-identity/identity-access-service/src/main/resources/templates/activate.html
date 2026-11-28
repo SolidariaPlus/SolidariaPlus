@@ -3,30 +3,44 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Activar cuenta · Solidaria+</title>
+    <meta name="theme-color" content="#1E3A8A">
+    <title>Activa tu cuenta · Solidaria+</title>
+    <link rel="stylesheet" th:href="@{/portal/portal.css}">
+    <script type="module" th:src="@{/portal/portal.js}"></script>
 </head>
 <body>
-<main>
-    <h1>Activar su cuenta</h1>
-    <p role="alert" th:if="${error == 'VALIDATION_FAILED'}">
-        La contraseña debe tener al menos 12 caracteres, con una mayúscula, una minúscula, un número y un
-        carácter especial.
-    </p>
-    <p role="alert" th:if="${error != null and error != 'VALIDATION_FAILED'}">
-        El código de activación no es válido o ya expiró. Solicite uno nuevo en ventanilla.
-    </p>
-    <form method="post" th:action="@{/activate}">
-        <label>Número de socio
-            <input name="memberNumber" inputmode="numeric" required>
-        </label>
-        <label>Código de activación
-            <input name="activationCode" autocomplete="one-time-code" required>
-        </label>
-        <label>Nueva contraseña
-            <input name="newPassword" type="password" autocomplete="new-password" minlength="12" required>
-        </label>
-        <button type="submit">Activar</button>
-    </form>
-</main>
+<div id="root"
+     data-page="activate"
+     th:data-action="@{/activate}"
+     th:data-csrf-parameter="${_csrf.parameterName}"
+     th:data-csrf-token="${_csrf.token}"
+     th:data-error="${error == null ? null : (error == 'VALIDATION_FAILED' ? 'VALIDATION_FAILED' : 'AUTH_ACTIVATION_CODE_INVALID')}"
+     th:data-login-url="@{/login}"
+     th:data-member-number="${memberNumber}">
+    <noscript>
+        <main>
+            <h1>Activa tu cuenta</h1>
+            <p role="alert" th:if="${error == 'VALIDATION_FAILED'}">
+                La contraseña no cumple las reglas: 12 caracteres o más, mayúscula, minúscula, número y símbolo.
+            </p>
+            <p role="alert" th:if="${error != null and error != 'VALIDATION_FAILED'}">
+                El código de ventanilla no es válido o ya venció. Pide uno nuevo en la ventanilla de tu caja.
+            </p>
+            <form method="post" th:action="@{/activate}">
+                <label>Número de socio
+                    <input name="memberNumber" inputmode="numeric" autocomplete="username" required>
+                </label>
+                <label>Código de ventanilla
+                    <input name="activationCode" autocomplete="off" required>
+                </label>
+                <label>Nueva contraseña
+                    <input name="newPassword" type="password" autocomplete="new-password" minlength="12" required>
+                </label>
+                <button type="submit">Activar cuenta</button>
+            </form>
+            <p><a th:href="@{/login}">Volver a iniciar sesión</a></p>
+        </main>
+    </noscript>
+</div>
 </body>
 </html>

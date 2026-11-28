@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createAuthClient } from "./auth-client";
-import { parseRuntimeConfig } from "./config/runtime-config";
-import { base64UrlEncode } from "./crypto/base64url";
-import type { AuthorizationTransaction } from "./oauth/authorization-request";
-import { MemoryRefreshTokenVault, type PlatformAdapter } from "./platform/platform-adapter";
+import { createAuthClient } from "./auth-client.js";
+import { parseRuntimeConfig } from "./config/runtime-config.js";
+import { base64UrlEncode } from "./crypto/base64url.js";
+import type { AuthorizationTransaction } from "./oauth/authorization-request.js";
+import { MemoryRefreshTokenVault, type PlatformAdapter } from "./platform/platform-adapter.js";
 
 const config = parseRuntimeConfig({
   issuer: "https://id.test",

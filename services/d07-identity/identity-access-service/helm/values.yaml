@@ -10,19 +10,23 @@ resources:
   limits:
     memory: 768Mi
 
-livenessProbe:
-  httpGet:
-    path: /actuator/health/liveness
-    port: 8097
-  initialDelaySeconds: 30
-  periodSeconds: 10
+# The service runs under the context path /auth (edge routes /auth/* unchanged to the ALB).
+probes:
+  startup:
+    path: /auth/actuator/health/liveness
+  liveness:
+    path: /auth/actuator/health/liveness
+  readiness:
+    path: /auth/actuator/health/readiness
 
-readinessProbe:
-  httpGet:
-    path: /actuator/health/readiness
-    port: 8097
-  initialDelaySeconds: 20
-  periodSeconds: 10
+metrics:
+  path: /auth/actuator/prometheus
+
+ingress:
+  enabled: true
+  paths:
+    - path: /auth
+      pathType: Prefix
 
 networkPolicy:
   enabled: true

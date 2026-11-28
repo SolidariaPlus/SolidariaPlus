@@ -1,4 +1,4 @@
-import { AuthError } from "../errors/auth-error";
+import { AuthError } from "../errors/auth-error.js";
 
 export interface TokenSet {
   readonly accessToken: string;

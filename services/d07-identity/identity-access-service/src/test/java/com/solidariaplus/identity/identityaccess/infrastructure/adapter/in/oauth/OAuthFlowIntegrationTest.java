@@ -27,6 +27,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.core.endpoint.OAuth2ParameterNames;
 import org.springframework.security.oauth2.core.endpoint.PkceParameterNames;
 import org.springframework.security.oauth2.core.oidc.OidcScopes;
@@ -46,7 +47,7 @@ class OAuthFlowIntegrationTest extends ServiceIntegrationTest {
     private static final String TELLER_SUB = "01930000-0000-7000-8000-000000000001";
     private static final String BOARD_PRESIDENT_SUB = "01930000-0000-7000-8000-000000000002";
     private static final String WEB_CLIENT = "solidaria-web";
-    private static final String REDIRECT_URI = "http://localhost/auth/callback";
+    private static final String REDIRECT_URI = "http://localhost/callback";
 
     @Autowired
     private MockMvc mockMvc;
@@ -60,7 +61,7 @@ class OAuthFlowIntegrationTest extends ServiceIntegrationTest {
     // --- PKCE flow: member claims ---
 
     @Test
-    void validPkceFlow_memberSubject_accessTokenHasMidAndMemberRole() throws Exception {
+    void validPkceFlowMemberSubjectAccessTokenHasMidAndMemberRole() throws Exception {
         PkcePair pkce = generatePkce();
         String code = uniqueCode();
         storeAuthorization(code, pkce.challenge(), new SubjectId(UUID.fromString(MEMBER_SUB)));
@@ -80,7 +81,7 @@ class OAuthFlowIntegrationTest extends ServiceIntegrationTest {
     // --- PKCE flow: staff claims ---
 
     @Test
-    void validPkceFlow_staffSubject_accessTokenHasRolesButNoMid() throws Exception {
+    void validPkceFlowStaffSubjectAccessTokenHasRolesButNoMid() throws Exception {
         PkcePair pkce = generatePkce();
         String code = uniqueCode();
         storeAuthorization(code, pkce.challenge(), new SubjectId(UUID.fromString(TELLER_SUB)));
@@ -95,7 +96,7 @@ class OAuthFlowIntegrationTest extends ServiceIntegrationTest {
     }
 
     @Test
-    void validPkceFlow_staffWithFunction_accessTokenHasFnClaim() throws Exception {
+    void validPkceFlowStaffWithFunctionAccessTokenHasFnClaim() throws Exception {
         PkcePair pkce = generatePkce();
         String code = uniqueCode();
         storeAuthorization(code, pkce.challenge(), new SubjectId(UUID.fromString(BOARD_PRESIDENT_SUB)));
@@ -112,7 +113,7 @@ class OAuthFlowIntegrationTest extends ServiceIntegrationTest {
     // --- PKCE validation ---
 
     @Test
-    void missingCodeVerifier_tokenEndpointReturnsBadRequest() throws Exception {
+    void missingCodeVerifierTokenEndpointRejectsTheClientWithoutRedirect() throws Exception {
         PkcePair pkce = generatePkce();
         String code = uniqueCode();
         storeAuthorization(code, pkce.challenge(), new SubjectId(UUID.fromString(MEMBER_SUB)));
@@ -123,11 +124,11 @@ class OAuthFlowIntegrationTest extends ServiceIntegrationTest {
                         .param(OAuth2ParameterNames.CODE, code)
                         .param(OAuth2ParameterNames.REDIRECT_URI, REDIRECT_URI)
                         .param(OAuth2ParameterNames.CLIENT_ID, WEB_CLIENT))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void wrongCodeVerifier_tokenEndpointReturnsBadRequest() throws Exception {
+    void wrongCodeVerifierTokenEndpointReturnsBadRequest() throws Exception {
         PkcePair pkce = generatePkce();
         PkcePair otherPkce = generatePkce();
         String code = uniqueCode();
@@ -146,7 +147,7 @@ class OAuthFlowIntegrationTest extends ServiceIntegrationTest {
     // --- Redirect URI validation ---
 
     @Test
-    void unregisteredRedirectUri_authorizationEndpointDoesNotRedirectToIt() throws Exception {
+    void unregisteredRedirectUriAuthorizationEndpointDoesNotRedirectToIt() throws Exception {
         PkcePair pkce = generatePkce();
         String evilRedirectUri = "https://evil.example.com/callback";
 
@@ -168,7 +169,7 @@ class OAuthFlowIntegrationTest extends ServiceIntegrationTest {
     // --- JWKS ---
 
     @Test
-    void jwksEndpoint_returnsTwoKeys() throws Exception {
+    void jwksEndpointReturnsTwoKeys() throws Exception {
         MvcResult result =
                 mockMvc.perform(get("/oauth2/jwks")).andExpect(status().isOk()).andReturn();
 
@@ -179,7 +180,7 @@ class OAuthFlowIntegrationTest extends ServiceIntegrationTest {
     }
 
     @Test
-    void jwksEndpoint_hasCacheControlHeader() throws Exception {
+    void jwksEndpointHasCacheControlHeader() throws Exception {
         mockMvc.perform(get("/oauth2/jwks"))
                 .andExpect(status().isOk())
                 .andExpect(result -> assertThat(result.getResponse().getHeader("Cache-Control"))
@@ -189,7 +190,7 @@ class OAuthFlowIntegrationTest extends ServiceIntegrationTest {
     // --- Independent JOSE validation ---
 
     @Test
-    void accessToken_validatesAgainstPublishedJwks() throws Exception {
+    void accessTokenValidatesAgainstPublishedJwks() throws Exception {
         PkcePair pkce = generatePkce();
         String code = uniqueCode();
         storeAuthorization(code, pkce.challenge(), new SubjectId(UUID.fromString(MEMBER_SUB)));
@@ -211,7 +212,7 @@ class OAuthFlowIntegrationTest extends ServiceIntegrationTest {
     }
 
     @Test
-    void accessToken_hasExpectedStaticClaims() throws Exception {
+    void accessTokenHasExpectedStaticClaims() throws Exception {
         PkcePair pkce = generatePkce();
         String code = uniqueCode();
         storeAuthorization(code, pkce.challenge(), new SubjectId(UUID.fromString(MEMBER_SUB)));
@@ -224,7 +225,58 @@ class OAuthFlowIntegrationTest extends ServiceIntegrationTest {
         assertThat(jwt.getHeader().getAlgorithm().getName()).isEqualTo("ES256");
     }
 
+    // --- Activation codes by member number (screen B10) ---
+
+    @Test
+    void tellerIssuesActivationCodeByMemberNumber() throws Exception {
+        MvcResult result = mockMvc.perform(post("/members/by-number/1003/activation-codes")
+                        .header("Authorization", "Bearer " + accessTokenFor(TELLER_SUB)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        String body = result.getResponse().getContentAsString();
+        assertThat((String) com.jayway.jsonpath.JsonPath.read(body, "$.memberNumber"))
+                .isEqualTo("1003");
+        assertThat((String) com.jayway.jsonpath.JsonPath.read(body, "$.memberId"))
+                .isEqualTo("01930000-0000-7000-8000-000000000203");
+        assertThat((String) com.jayway.jsonpath.JsonPath.read(body, "$.code")).matches("^[A-HJ-NP-Z2-9]{8}$");
+        assertThat(result.getResponse().getHeader("Cache-Control")).contains("no-store");
+    }
+
+    @Test
+    void memberCannotIssueActivationCodeByMemberNumber() throws Exception {
+        mockMvc.perform(post("/members/by-number/1003/activation-codes")
+                        .header("Authorization", "Bearer " + accessTokenFor(MEMBER_SUB)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void anonymousCannotIssueActivationCodeByMemberNumber() throws Exception {
+        mockMvc.perform(post("/members/by-number/1003/activation-codes")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void unknownOrMalformedMemberNumberIsNotFound() throws Exception {
+        String token = accessTokenFor(TELLER_SUB);
+        for (String number : List.of("9999999999", "12ab")) {
+            MvcResult result = mockMvc.perform(post("/members/by-number/" + number + "/activation-codes")
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isNotFound())
+                    .andReturn();
+            assertThat((String) com.jayway.jsonpath.JsonPath.read(
+                            result.getResponse().getContentAsString(), "$.code"))
+                    .isEqualTo("MEMBER_NOT_FOUND");
+        }
+    }
+
     // --- helpers ---
+
+    private String accessTokenFor(String sub) throws Exception {
+        PkcePair pkce = generatePkce();
+        String code = uniqueCode();
+        storeAuthorization(code, pkce.challenge(), new SubjectId(UUID.fromString(sub)));
+        return exchangeCode(code, pkce.verifier(), REDIRECT_URI);
+    }
 
     private String exchangeCode(String code, String codeVerifier, String redirectUri) throws Exception {
         MvcResult result = mockMvc.perform(post("/oauth2/token")
@@ -260,6 +312,20 @@ class OAuthFlowIntegrationTest extends ServiceIntegrationTest {
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizedScopes(Set.of(OidcScopes.OPENID, "offline_access"))
                 .attribute(Principal.class.getName(), principal)
+                .attribute(
+                        OAuth2AuthorizationRequest.class.getName(),
+                        OAuth2AuthorizationRequest.authorizationCode()
+                                .authorizationUri("http://localhost/oauth2/authorize")
+                                .clientId(WEB_CLIENT)
+                                .redirectUri(REDIRECT_URI)
+                                .scopes(Set.of(OidcScopes.OPENID, "offline_access"))
+                                .state("state")
+                                .additionalParameters(Map.of(
+                                        PkceParameterNames.CODE_CHALLENGE,
+                                        codeChallenge,
+                                        PkceParameterNames.CODE_CHALLENGE_METHOD,
+                                        "S256"))
+                                .build())
                 .attribute(OAuth2ParameterNames.REDIRECT_URI, REDIRECT_URI)
                 .attribute(PkceParameterNames.CODE_CHALLENGE, codeChallenge)
                 .attribute(PkceParameterNames.CODE_CHALLENGE_METHOD, "S256")

@@ -1,23 +1,36 @@
 import { describe, expect, it } from "vitest";
-import { AuthError, CLIENT_ERROR_CODES, DOMAIN_ERROR_CODES, OAUTH_ERROR_CODES } from "./auth-error";
-import { DEFAULT_ERROR_MESSAGE, ERROR_MESSAGES_ES, toUserMessage } from "./messages-es";
+import {
+  AuthError,
+  CLIENT_ERROR_CODES,
+  DOMAIN_ERROR_CODES,
+  OAUTH_ERROR_CODES,
+  SIGN_IN_PAGE_ERROR_CODES,
+} from "./auth-error.js";
+import { DEFAULT_ERROR_MESSAGE, ERROR_MESSAGES_ES, toUserMessage } from "./messages-es.js";
 
 describe("Spanish error messages", () => {
-  it.each([...OAUTH_ERROR_CODES, ...DOMAIN_ERROR_CODES, ...CLIENT_ERROR_CODES])(
-    "maps %s to a specific message",
-    (code) => {
-      const message = toUserMessage(new AuthError(code));
-      expect(message).toBe(ERROR_MESSAGES_ES[code]);
-      expect(message).not.toBe(DEFAULT_ERROR_MESSAGE);
-    },
-  );
+  it.each([
+    ...OAUTH_ERROR_CODES,
+    ...DOMAIN_ERROR_CODES,
+    ...CLIENT_ERROR_CODES,
+    ...SIGN_IN_PAGE_ERROR_CODES,
+  ])("maps %s to a specific message", (code) => {
+    const message = toUserMessage(new AuthError(code));
+    expect(message).toBe(ERROR_MESSAGES_ES[code]);
+    expect(message).not.toBe(DEFAULT_ERROR_MESSAGE);
+  });
 
   it("maps the domain codes to the expected texts", () => {
-    expect(toUserMessage(new AuthError("AUTH_ACCOUNT_LOCKED"))).toMatch(/bloqueada/);
+    expect(toUserMessage(new AuthError("AUTH_ACCOUNT_LOCKED"))).toMatch(/15 minutos/);
     expect(toUserMessage(new AuthError("AUTH_ACTIVATION_CODE_INVALID"))).toMatch(
-      /código de activación/,
+      /código de ventanilla/,
     );
-    expect(toUserMessage(new AuthError("AUTH_MFA_REQUIRED"))).toMatch(/verificación en dos pasos/);
+    expect(toUserMessage(new AuthError("AUTH_MFA_REQUIRED"))).toMatch(/app de autenticación/);
+  });
+
+  it("recognizes an AuthError from another copy of the package", () => {
+    const foreign = Object.assign(new Error("x"), { name: "AuthError", code: "MEMBER_NOT_FOUND" });
+    expect(toUserMessage(foreign)).toBe(ERROR_MESSAGES_ES.MEMBER_NOT_FOUND);
   });
 
   it("accepts raw codes from redirect parameters", () => {

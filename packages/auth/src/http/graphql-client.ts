@@ -1,5 +1,5 @@
-import { AuthError, isAuthErrorCode } from "../errors/auth-error";
-import type { FetchLike } from "../shared/types";
+import { AuthError, isAuthErrorCode } from "../errors/auth-error.js";
+import type { FetchLike } from "../shared/types.js";
 
 export interface GraphQLRequest<TVariables> {
   readonly query: string;

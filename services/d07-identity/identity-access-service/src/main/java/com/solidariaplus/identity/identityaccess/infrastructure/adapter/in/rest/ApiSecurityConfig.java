@@ -25,15 +25,15 @@ class ApiSecurityConfig {
     @Order(2)
     SecurityFilterChain apiFilterChain(HttpSecurity http) throws Exception {
         http.securityMatcher("/members/**", "/staff/**", "/sessions/**")
-                .authorizeHttpRequests(
-                        requests -> requests.requestMatchers(HttpMethod.POST, "/members/*/activation-codes")
-                                .hasRole("TELLER")
-                                .requestMatchers(HttpMethod.POST, "/staff/authenticator-resets")
-                                .access(AuthorizationManagers.allOf(
-                                        AuthorityAuthorizationManager.hasRole("BOARD"),
-                                        AuthorityAuthorizationManager.hasAnyAuthority("FN_PRESIDENT", "FN_COMPLIANCE")))
-                                .anyRequest()
-                                .authenticated())
+                .authorizeHttpRequests(requests -> requests.requestMatchers(
+                                HttpMethod.POST, "/members/*/activation-codes", "/members/by-number/*/activation-codes")
+                        .hasRole("TELLER")
+                        .requestMatchers(HttpMethod.POST, "/staff/authenticator-resets")
+                        .access(AuthorizationManagers.allOf(
+                                AuthorityAuthorizationManager.hasRole("BOARD"),
+                                AuthorityAuthorizationManager.hasAnyAuthority("FN_PRESIDENT", "FN_COMPLIANCE")))
+                        .anyRequest()
+                        .authenticated())
                 .oauth2ResourceServer(server -> server.jwt(jwt -> jwt.jwtAuthenticationConverter(authentication())))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .csrf(AbstractHttpConfigurer::disable);

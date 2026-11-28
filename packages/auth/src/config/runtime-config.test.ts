@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { jsonConfigSource, loadRuntimeConfig, parseRuntimeConfig } from "./runtime-config";
+import { jsonConfigSource, loadRuntimeConfig, parseRuntimeConfig } from "./runtime-config.js";
 
 const valid = {
   issuer: "https://id.test/auth/",

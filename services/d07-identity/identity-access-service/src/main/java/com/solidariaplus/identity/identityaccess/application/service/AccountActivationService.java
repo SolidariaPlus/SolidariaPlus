@@ -45,12 +45,29 @@ public class AccountActivationService implements IssueActivationCodeUseCase, Act
     public IssuedCode issue(MemberId memberId, SubjectId tellerSub) {
         MemberAccount account =
                 accounts.findById(memberId).orElseThrow(() -> new DomainException(ErrorCode.MEMBER_NOT_FOUND));
+        return issueFor(account, tellerSub);
+    }
+
+    @Override
+    public IssuedCode issue(MemberNumber memberNumber, SubjectId tellerSub) {
+        MemberAccount account = accounts.findByMemberNumber(memberNumber)
+                .orElseThrow(() -> new DomainException(ErrorCode.MEMBER_NOT_FOUND));
+        return issueFor(account, tellerSub);
+    }
+
+    private IssuedCode issueFor(MemberAccount account, SubjectId tellerSub) {
         String code = ActivationCodeGenerator.generate();
         Instant now = clock.instant();
         ActivationCode issued = account.issueActivationCode(hasher.hash(code), now);
         accounts.save(account);
-        audit(Action.ACTIVATION_CODE_ISSUED, tellerSub, "TELLER", memberId, now);
-        return new IssuedCode(issued.getCodeId(), memberId.value(), code, issued.getCreatedAt(), issued.getExpiresAt());
+        audit(Action.ACTIVATION_CODE_ISSUED, tellerSub, "TELLER", account.getMemberId(), now);
+        return new IssuedCode(
+                issued.getCodeId(),
+                account.getMemberId().value(),
+                account.getMemberNumber().value(),
+                code,
+                issued.getCreatedAt(),
+                issued.getExpiresAt());
     }
 
     @Override

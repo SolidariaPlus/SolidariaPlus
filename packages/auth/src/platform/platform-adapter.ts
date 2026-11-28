@@ -1,4 +1,4 @@
-import type { AuthorizationTransaction } from "../oauth/authorization-request";
+import type { AuthorizationTransaction } from "../oauth/authorization-request.js";
 
 export interface BrowserLauncher {
   openAuthorization(url: URL): Promise<void>;
@@ -10,6 +10,7 @@ export interface RedirectReceiver {
 }
 
 export interface RefreshTokenVault {
+  readonly managedByCookie?: boolean;
   read(): Promise<string | undefined>;
   write(refreshToken: string): Promise<void>;
   clear(): Promise<void>;
@@ -39,4 +40,16 @@ export class MemoryRefreshTokenVault implements RefreshTokenVault {
   async clear(): Promise<void> {
     this.token = undefined;
   }
+}
+
+export class HttpOnlyCookieRefreshVault implements RefreshTokenVault {
+  readonly managedByCookie = true;
+
+  async read(): Promise<string | undefined> {
+    return undefined;
+  }
+
+  async write(): Promise<void> {}
+
+  async clear(): Promise<void> {}
 }

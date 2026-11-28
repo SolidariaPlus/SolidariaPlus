@@ -24,6 +24,12 @@ dependencies {
     testImplementation(libs.testcontainers.postgresql)
 }
 
+tasks.named<ProcessResources>("processResources") {
+    from(rootProject.layout.projectDirectory.dir("apps/auth-portal/dist")) {
+        into("static/portal")
+    }
+}
+
 val domainCoverage =
     tasks.register<JacocoCoverageVerification>("domainCoverage") {
         description = "Requires 80 % line coverage of the domain layer (RNF-MNT-02)."

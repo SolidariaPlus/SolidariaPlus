@@ -13,8 +13,8 @@ RUN chmod +x gradlew && ./gradlew :credit-origination-service:bootJar --no-daemo
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
-RUN groupadd --system app && useradd --system --gid app app
+RUN groupadd --system --gid 10001 app && useradd --system --uid 10001 --gid app app
 COPY --from=builder /workspace/services/d03-credit/credit-origination-service/build/libs/app.jar app.jar
-USER app
+USER 10001:10001
 EXPOSE 8085
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]

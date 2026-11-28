@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./theme": "./src/theme/index.ts",
+    "./tokens": "./src/theme/tokens.ts"
   },
   "scripts": {
     "lint": "eslint .",
@@ -12,9 +14,15 @@
     "test": "vitest run"
   },
   "peerDependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^9.6.0",
     "react": "^19.0.0"
   },
   "devDependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^9.6.0",
     "@solidariaplus/eslint-config": "workspace:*",
     "@solidariaplus/tsconfig": "workspace:*",
     "@testing-library/dom": "^10.4.2",

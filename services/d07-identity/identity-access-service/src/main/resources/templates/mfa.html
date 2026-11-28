@@ -3,26 +3,50 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Verificación · Solidaria+</title>
+    <meta name="theme-color" content="#1E3A8A">
+    <title th:text="${enrol ? 'Configura tu app de autenticación · Solidaria+' : 'Verifica tu código · Solidaria+'}">
+        Verifica tu código · Solidaria+
+    </title>
+    <link rel="stylesheet" th:href="@{/portal/portal.css}">
+    <script type="module" th:src="@{/portal/portal.js}"></script>
 </head>
 <body>
-<main>
-    <h1>Verificación en dos pasos</h1>
-    <section th:if="${enrol}">
-        <p>Agregue esta cuenta en su aplicación autenticadora con la clave o el enlace siguientes:</p>
-        <p><code th:text="${secret}"></code></p>
-        <p><a th:href="${otpauthUri}">Abrir en la aplicación autenticadora</a></p>
-    </section>
-    <p role="alert" th:if="${error == 'AUTH_ACCOUNT_LOCKED'}">
-        Demasiados intentos fallidos. Vuelva a intentarlo en 15 minutos.
-    </p>
-    <p role="alert" th:if="${error == 'AUTH_MFA_REQUIRED'}">El código no es correcto. Intente de nuevo.</p>
-    <form method="post" th:action="@{/mfa}">
-        <label>Código de la aplicación autenticadora
-            <input name="otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" required>
-        </label>
-        <button type="submit">Verificar</button>
-    </form>
-</main>
+<div id="root"
+     data-page="mfa"
+     th:data-mode="${enrol ? 'enrol' : 'verify'}"
+     th:data-action="@{/mfa}"
+     th:data-csrf-parameter="${_csrf.parameterName}"
+     th:data-csrf-token="${_csrf.token}"
+     th:data-error="${error}"
+     th:data-secret="${enrol ? secret : null}"
+     th:data-otpauth-uri="${enrol ? otpauthUri : null}"
+     th:data-enrolment-deadline="${enrolmentDeadline}"
+     th:data-login-url="@{/login}">
+    <noscript>
+        <main>
+            <h1 th:text="${enrol ? 'Configura tu app de autenticación' : 'Ingresa tu código de verificación'}">
+                Ingresa tu código de verificación
+            </h1>
+            <section th:if="${enrol}">
+                <p>Agrega Solidaria+ a tu app de autenticación con esta clave o con el enlace:</p>
+                <p><code th:text="${secret}"></code></p>
+                <p><a th:href="${otpauthUri}">Abrir en mi app de autenticación</a></p>
+            </section>
+            <p role="alert" th:if="${error == 'AUTH_ACCOUNT_LOCKED'}">
+                Por seguridad pausamos el acceso tras 5 intentos fallidos. Vuelve a intentarlo en 15 minutos.
+            </p>
+            <p role="alert" th:if="${error == 'AUTH_MFA_REQUIRED'}">
+                El código no es correcto. Revisa tu app de autenticación e intenta de nuevo.
+            </p>
+            <form method="post" th:action="@{/mfa}">
+                <label>Código de 6 dígitos
+                    <input name="otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" required>
+                </label>
+                <button type="submit">Verificar</button>
+            </form>
+            <p><a th:href="@{/login}">Volver a iniciar sesión</a></p>
+        </main>
+    </noscript>
+</div>
 </body>
 </html>

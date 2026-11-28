@@ -16,7 +16,7 @@ nat_gateway_count   = 1
 services = ["sample-service", "identity-access-service"]
 
 # JWKS endpoint of MS-17 used by RabbitMQ to validate JWT Bearer tokens (KAN-18 follow-up).
-rabbitmq_jwks_url = "https://qa.solidariaplus.ec/oauth2/jwks"
+rabbitmq_jwks_url = "https://qa.solidariaplus.ec/auth/oauth2/jwks"
 
 database_services = {
   "identity-access-service" = "identity_access"

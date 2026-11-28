@@ -1,6 +1,7 @@
 package com.solidariaplus.identity.identityaccess.application.port.in;
 
 import com.solidariaplus.identity.identityaccess.domain.model.vo.MemberId;
+import com.solidariaplus.identity.identityaccess.domain.model.vo.MemberNumber;
 import com.solidariaplus.identity.identityaccess.domain.model.vo.SubjectId;
 import java.time.Instant;
 import java.util.UUID;
@@ -8,5 +9,13 @@ import java.util.UUID;
 public interface IssueActivationCodeUseCase {
     IssuedCode issue(MemberId memberId, SubjectId tellerSub);
 
-    record IssuedCode(UUID activationCodeId, UUID memberId, String code, Instant issuedAt, Instant expiresAt) {}
+    IssuedCode issue(MemberNumber memberNumber, SubjectId tellerSub);
+
+    record IssuedCode(
+            UUID activationCodeId,
+            UUID memberId,
+            String memberNumber,
+            String code,
+            Instant issuedAt,
+            Instant expiresAt) {}
 }

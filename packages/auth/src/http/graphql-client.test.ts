@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createGraphQLClient, GraphQLRequestError } from "./graphql-client";
+import { createGraphQLClient, GraphQLRequestError } from "./graphql-client.js";
 
 function respondWith(body: unknown, status = 200) {
   return vi.fn(async () => new Response(JSON.stringify(body), { status }));

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { base64UrlEncode } from "../crypto/base64url";
-import { hasAnyRole, hasFunction, hasRole, isMember, parseClaims } from "./claims";
+import { base64UrlEncode } from "../crypto/base64url.js";
+import {
+  hasAnyRole,
+  hasFunction,
+  hasRole,
+  isMember,
+  parseClaims,
+  usedSecondFactor,
+} from "./claims.js";
 
 function jwt(payload: Record<string, unknown>): string {
   const encode = (value: unknown) =>
@@ -17,6 +24,9 @@ describe("parseClaims", () => {
         fn: ["CASHIER", "AUDITOR"],
         mid: "m-9",
         exp: 1_700_000_000,
+        auth_time: 1_699_990_000,
+        amr: ["pwd", "otp", "mfa"],
+        sid: "s-1",
       }),
     );
 
@@ -26,7 +36,11 @@ describe("parseClaims", () => {
       functions: ["CASHIER", "AUDITOR"],
       memberId: "m-9",
       expiresAt: 1_700_000_000_000,
+      authenticatedAt: 1_699_990_000_000,
+      authenticationMethods: ["pwd", "otp", "mfa"],
+      sessionId: "s-1",
     });
+    expect(usedSecondFactor(claims)).toBe(true);
     expect(hasRole(claims, "MEMBER")).toBe(true);
     expect(hasAnyRole(claims, ["STAFF", "MEMBER"])).toBe(true);
     expect(hasFunction(claims, "AUDITOR")).toBe(true);

@@ -3,28 +3,42 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Iniciar sesión · Solidaria+</title>
+    <meta name="theme-color" content="#1E3A8A">
+    <title>Inicia sesión · Solidaria+</title>
+    <link rel="stylesheet" th:href="@{/portal/portal.css}">
+    <script type="module" th:src="@{/portal/portal.js}"></script>
 </head>
 <body>
-<main>
-    <h1>Iniciar sesión</h1>
-    <p role="alert" th:if="${param.error != null and param.error[0] == 'locked'}">
-        Demasiados intentos fallidos. Vuelva a intentarlo en 15 minutos.
-    </p>
-    <p role="alert" th:if="${param.error != null and param.error[0] != 'locked'}">
-        El usuario o la contraseña no son correctos.
-    </p>
-    <p role="status" th:if="${param.activated != null}">Su cuenta está activa. Ya puede iniciar sesión.</p>
-    <form method="post" th:action="@{/login}">
-        <label>Número de socio o cuenta institucional
-            <input name="username" autocomplete="username" required>
-        </label>
-        <label>Contraseña
-            <input name="password" type="password" autocomplete="current-password" required>
-        </label>
-        <button type="submit">Ingresar</button>
-    </form>
-    <p><a th:href="@{/activate}">Activar mi cuenta o cambiar mi contraseña</a></p>
-</main>
+<div id="root"
+     data-page="login"
+     th:data-action="@{/login}"
+     th:data-csrf-parameter="${_csrf.parameterName}"
+     th:data-csrf-token="${_csrf.token}"
+     th:data-error="${loginError}"
+     th:data-activated="${activated}"
+     th:data-activate-url="@{/activate}">
+    <noscript>
+        <main>
+            <h1>Inicia sesión</h1>
+            <p role="alert" th:if="${loginError == 'locked'}">
+                Por seguridad pausamos el acceso tras 5 intentos fallidos. Vuelve a intentarlo en 15 minutos.
+            </p>
+            <p role="alert" th:if="${loginError == 'credentials'}">
+                El usuario o la contraseña no son correctos.
+            </p>
+            <p role="status" th:if="${activated}">Tu cuenta está activa. Ya puedes iniciar sesión.</p>
+            <form method="post" th:action="@{/login}">
+                <label>Número de socio o usuario institucional
+                    <input name="username" autocomplete="username" required>
+                </label>
+                <label>Contraseña
+                    <input name="password" type="password" autocomplete="current-password" required>
+                </label>
+                <button type="submit">Iniciar sesión</button>
+            </form>
+            <p><a th:href="@{/activate}">Activa tu cuenta con el código de ventanilla</a></p>
+        </main>
+    </noscript>
+</div>
 </body>
 </html>

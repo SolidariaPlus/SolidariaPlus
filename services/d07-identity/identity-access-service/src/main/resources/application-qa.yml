@@ -11,6 +11,7 @@ spring:
       - aws-parameterstore:/solidaria/qa/identity-access-service/cache/?prefix=cache.
       - aws-parameterstore:/solidaria/qa/identity-access-service/kafka/?prefix=kafka.
       - aws-parameterstore:/solidaria/qa/identity-access-service/ldap/?prefix=ldap.
+      - aws-parameterstore:/solidaria/qa/identity-access-service/kms/?prefix=kms.
 
   flyway:
     # The synthetic seed runs only in the local and qa profiles (KAN-16 §3.2).

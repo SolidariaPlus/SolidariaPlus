@@ -29,7 +29,7 @@ class M2mTokenIntegrationTest extends ServiceIntegrationTest {
     private MockMvc mockMvc;
 
     @Test
-    void clientCredentials_validSecret_returnsAccessTokenWithServiceRole() throws Exception {
+    void clientCredentialsValidSecretReturnsAccessTokenWithServiceRole() throws Exception {
         String credentials =
                 Base64.getEncoder().encodeToString((SERVICE_CLIENT_ID + ":" + SERVICE_CLIENT_SECRET).getBytes());
 
@@ -61,7 +61,7 @@ class M2mTokenIntegrationTest extends ServiceIntegrationTest {
     }
 
     @Test
-    void clientCredentials_wrongSecret_returnsUnauthorized() throws Exception {
+    void clientCredentialsWrongSecretReturnsUnauthorized() throws Exception {
         String credentials = Base64.getEncoder().encodeToString((SERVICE_CLIENT_ID + ":wrong-secret").getBytes());
 
         mockMvc.perform(post("/oauth2/token")

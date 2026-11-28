@@ -319,6 +319,9 @@ module "service_settings" {
       "identity-access-service/ldap/url"         = module.directory[0].ldaps_url
       "identity-access-service/ldap/domain-name" = module.directory[0].domain_name
     } : {},
+    local.ms17 ? {
+      "identity-access-service/kms/key-arn" = aws_kms_key.ms17[0].arn
+    } : {},
   )
   # MS-17 secrets that no other module writes (db: aurora, cache: valkey, kafka/users: messaging).
   secrets = local.ms17 ? {
@@ -355,6 +358,22 @@ resource "tls_private_key" "ms17_signing" {
 
   algorithm   = "ECDSA"
   ecdsa_curve = "P256"
+}
+
+# Envelope key of the personal data that MS-17 encrypts field by field (TOTP secrets).
+resource "aws_kms_key" "ms17" {
+  count = local.ms17 ? 1 : 0
+
+  description             = "Field encryption of identity-access-service (${var.environment})"
+  enable_key_rotation     = true
+  deletion_window_in_days = 7
+}
+
+resource "aws_kms_alias" "ms17" {
+  count = local.ms17 ? 1 : 0
+
+  name          = "alias/solidaria-${var.environment}-identity-access-service"
+  target_key_id = aws_kms_key.ms17[0].key_id
 }
 
 resource "random_password" "ms17_services_client" {

@@ -1,13 +1,13 @@
-import { AuthError } from "../errors/auth-error";
-import type { Clock, FetchLike } from "../shared/types";
-import { parseTokenResponse, type TokenSet } from "./token-response";
+import { AuthError } from "../errors/auth-error.js";
+import type { Clock, FetchLike } from "../shared/types.js";
+import { parseTokenResponse, type TokenSet } from "./token-response.js";
 
 export interface CodeExchanger {
   exchangeCode(code: string, codeVerifier: string, redirectUri: string): Promise<TokenSet>;
 }
 
 export interface TokenRefresher {
-  refresh(refreshToken: string): Promise<TokenSet>;
+  refresh(refreshToken: string | undefined): Promise<TokenSet>;
 }
 
 export interface TokenEndpointOptions {
@@ -15,6 +15,7 @@ export interface TokenEndpointOptions {
   readonly clientId: string;
   readonly fetch: FetchLike;
   readonly clock: Clock;
+  readonly sendCredentials?: boolean;
 }
 
 export class TokenEndpoint implements CodeExchanger, TokenRefresher {
@@ -33,8 +34,12 @@ export class TokenEndpoint implements CodeExchanger, TokenRefresher {
     });
   }
 
-  refresh(refreshToken: string): Promise<TokenSet> {
-    return this.post({ grant_type: "refresh_token", refresh_token: refreshToken });
+  refresh(refreshToken: string | undefined): Promise<TokenSet> {
+    return this.post(
+      refreshToken
+        ? { grant_type: "refresh_token", refresh_token: refreshToken }
+        : { grant_type: "refresh_token" },
+    );
   }
 
   private async post(parameters: Record<string, string>): Promise<TokenSet> {
@@ -54,6 +59,7 @@ export class TokenEndpoint implements CodeExchanger, TokenRefresher {
           Accept: "application/json",
         },
         body,
+        credentials: this.options.sendCredentials ? "include" : "same-origin",
       });
     } catch (cause) {
       throw new AuthError("network_error", cause instanceof Error ? cause.message : undefined);

@@ -33,7 +33,7 @@ servers:
       apiHost:
         description: Custom domain of the API Gateway of the environment.
         default: api.solidariaplus.ec
-  - url: http://localhost:8097
+  - url: http://localhost:8097/auth
     description: Local workstation (./gradlew :identity-access-service:bootRun); no /auth prefix.
 
 tags:
@@ -132,7 +132,7 @@ paths:
           schema:
             type: string
             format: uri
-          example: https://app.solidariaplus.ec/auth/callback
+          example: https://app.solidariaplus.ec/callback
         - name: scope
           in: query
           required: true
@@ -196,10 +196,10 @@ paths:
                   value: /login
                 toClient:
                   summary: Authorization code issued
-                  value: https://app.solidariaplus.ec/auth/callback?code=SplxlOBeZQQYbYS6WxSbIA&state=4f1d2c9a8b7e6f5a4d3c2b1a
+                  value: https://app.solidariaplus.ec/callback?code=SplxlOBeZQQYbYS6WxSbIA&state=4f1d2c9a8b7e6f5a4d3c2b1a
                 accessDenied:
                   summary: The user cancelled the sign-in
-                  value: https://app.solidariaplus.ec/auth/callback?error=access_denied&error_description=Sign-in%20cancelled&state=4f1d2c9a8b7e6f5a4d3c2b1a
+                  value: https://app.solidariaplus.ec/callback?error=access_denied&error_description=Sign-in%20cancelled&state=4f1d2c9a8b7e6f5a4d3c2b1a
         "400":
           description: Unknown client or redirect URI; rendered as a page, never redirected.
           content:
@@ -729,6 +729,7 @@ paths:
                   value:
                     activationCodeId: 0193a1c4-2b3d-7f10-8e21-5a6b7c8d9e01
                     memberId: 0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a90
+                    memberNumber: "1458"
                     code: K7Q4M2XP
                     issuedAt: "2026-11-25T15:04:05Z"
                     expiresAt: "2026-11-28T15:04:05Z"
@@ -770,6 +771,65 @@ paths:
                     detail: The membership has ended.
                     instance: /auth/members/0192f3a0-7c41-7b2e-9a4d-3f5e8c1b2a92/activation-codes
                     correlationId: 0193a1b2-4c5d-7e6f-8a9b-0c1d2e3f4a61
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /members/by-number/{memberNumber}/activation-codes:
+    post:
+      tags: [Activation]
+      operationId: issueActivationCodeByMemberNumber
+      summary: Issue a one-time activation code for a member identified by member number
+      description: |
+        Same use case as `issueActivationCode`, for the teller web client, which knows the member
+        number printed on the passbook but not the member identifier issued by MS-01. A malformed or
+        unknown member number answers MEMBER_NOT_FOUND. Records an AuditRecord
+        (`ACTIVATION_CODE_ISSUED`).
+
+        Requires role `TELLER`.
+      security:
+        - bearerAuth: []
+      x-required-roles: [TELLER]
+      parameters:
+        - name: memberNumber
+          in: path
+          required: true
+          description: Member number, 1 to 10 digits.
+          schema:
+            type: string
+            pattern: "^[0-9]{1,10}$"
+          example: "1458"
+        - $ref: "#/components/parameters/CorrelationId"
+      responses:
+        "201":
+          description: Activation code issued.
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/CacheNoStore"
+            Location:
+              description: Activation code resource.
+              schema:
+                type: string
+                format: uri-reference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActivationCode"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: No member account exists for this member number (MEMBER_NOT_FOUND).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "422":
+          description: The membership ended; no code can be issued (MEMBER_NOT_ELIGIBLE).
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
         "429":
           $ref: "#/components/responses/RateLimited"
 
@@ -1595,12 +1655,16 @@ components:
     ActivationCode:
       type: object
       description: Activation code issued for a member; `code` is shown only in this response.
-      required: [activationCodeId, memberId, code, issuedAt, expiresAt]
+      required: [activationCodeId, memberId, memberNumber, code, issuedAt, expiresAt]
       properties:
         activationCodeId:
           $ref: "#/components/schemas/Uuid"
         memberId:
           $ref: "#/components/schemas/Uuid"
+        memberNumber:
+          type: string
+          description: Member number the teller sees on the passbook.
+          pattern: "^[0-9]{1,10}$"
         code:
           type: string
           description: 8 characters without ambiguous symbols (no 0, 1, O, I).
@@ -1685,7 +1749,7 @@ components:
       value:
         grant_type: authorization_code
         code: SplxlOBeZQQYbYS6WxSbIA
-        redirect_uri: https://app.solidariaplus.ec/auth/callback
+        redirect_uri: https://app.solidariaplus.ec/callback
         client_id: solidaria-mobile
         code_verifier: dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk
     TokenRequestRefreshToken:
