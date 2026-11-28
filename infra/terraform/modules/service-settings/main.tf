@@ -3,6 +3,8 @@
 # - parameters: plain settings known to Terraform (for example the broker bootstrap address).
 # - secrets: entries whose value is filled in at deployment or by hand; Terraform creates them with
 #   a placeholder and never overwrites the value afterwards. No value is ever written in Git.
+# - initial_values: optional first value of some of those secrets (generated keys, JSON skeletons),
+#   written once instead of the placeholder; later manual changes (rotation) are kept.
 
 terraform {
   required_version = ">= 1.11"
@@ -32,6 +34,13 @@ variable "secrets" {
   default     = {}
 }
 
+variable "initial_values" {
+  description = "Optional first value of a secret of var.secrets: \"<service>/<key>\" => value. Missing keys get \"PENDING\"."
+  type        = map(string)
+  default     = {}
+  sensitive   = true
+}
+
 resource "aws_ssm_parameter" "this" {
   for_each = var.parameters
 
@@ -52,7 +61,7 @@ resource "aws_secretsmanager_secret_version" "placeholder" {
   for_each = var.secrets
 
   secret_id     = aws_secretsmanager_secret.this[each.key].id
-  secret_string = "PENDING"
+  secret_string = lookup(var.initial_values, each.key, "PENDING")
 
   lifecycle {
     ignore_changes = [secret_string]

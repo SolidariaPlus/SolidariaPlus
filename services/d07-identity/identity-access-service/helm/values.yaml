@@ -1,5 +1,49 @@
 # Helm values of identity-access-service for the shared chart deploy/helm/solidaria-service (KAN-33).
-# The service is not deployed yet: enabled stays false until its first release.
-enabled: false
+enabled: true
 nameOverride: identity-access-service
 containerPort: 8097
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    memory: 768Mi
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8097
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8097
+  initialDelaySeconds: 20
+  periodSeconds: 10
+
+networkPolicy:
+  enabled: true
+  egress:
+    # Aurora PostgreSQL
+    - ports:
+        - port: 5432
+          protocol: TCP
+    # Valkey
+    - ports:
+        - port: 6379
+          protocol: TCP
+    # Kafka (SASL_SSL)
+    - ports:
+        - port: 9092
+          protocol: TCP
+    # LDAPS (Active Directory)
+    - ports:
+        - port: 636
+          protocol: TCP
+    # HTTPS (Secrets Manager, Parameter Store, KMS)
+    - ports:
+        - port: 443
+          protocol: TCP

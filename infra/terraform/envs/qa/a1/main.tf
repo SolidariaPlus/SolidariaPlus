@@ -297,8 +297,6 @@ module "edge" {
   name         = local.name
   environment  = var.environment
   api_endpoint = module.http_api.api_endpoint
-  vpc_id       = data.aws_vpc.this.id
-  subnet_id    = local.public_subnet_ids[0]
 }
 
 # ---------------------------------------------------------------------------------------------
