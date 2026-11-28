@@ -1,0 +1,39 @@
+#!/bin/bash
+# Entry point: nginx reverse proxy for Solidaria+ (edge module, OI-19).
+# Runs permanently on the edge proxy EC2; routes API and auth traffic to the HTTP API Gateway.
+# Cloudflare sits in front as CDN/WAF once the domain is delegated.
+set -euo pipefail
+
+dnf install -y nginx
+
+cat > /etc/nginx/conf.d/solidaria.conf << 'NGINXEOF'
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+
+    # Health check (Cloudflare health probe and local monitoring)
+    location = /health {
+        return 200 '{"status":"ok"}';
+        add_header Content-Type application/json;
+    }
+
+    # Auth and API: proxy to the HTTP API Gateway (HTTP API → VPC Link → ALB → EKS)
+    location ~ ^/(auth|api)/ {
+        proxy_pass         https://${api_host};
+        proxy_ssl_server_name on;
+        proxy_set_header   Host ${api_host};
+        proxy_set_header   X-Real-IP $remote_addr;
+        proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    # Catch-all while the SPA has not been configured as a Cloudflare origin yet
+    location / {
+        return 200 '{"entry":"solidaria-plus","note":"Configure SPA origin in Cloudflare"}';
+        add_header Content-Type application/json;
+    }
+}
+NGINXEOF
+
+systemctl enable --now nginx

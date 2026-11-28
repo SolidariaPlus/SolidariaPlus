@@ -6,7 +6,9 @@ S3 bucket owned by one service or by the platform (KAN-30; KAN-2 §6.5): private
 
 ## Interface
 
-Inputs: `name`, `versioning`, `object_lock_mode` (GOVERNANCE in QA, COMPLIANCE in Production), `object_lock_days`, `force_destroy`. Outputs: `id`, `arn`, `regional_domain_name`.
+Inputs: `name`, `versioning`, `object_lock_mode` (GOVERNANCE in QA, COMPLIANCE in Production), `object_lock_days`. Outputs: `id`, `arn`, `regional_domain_name`.
+
+The bucket itself is created once with the CLI (Learner Lab SCP, see `main.tf`); this module manages only its settings. Empty it before a destroy: `aws s3 rm s3://<name> --recursive`.
 
 ## Invariants
 

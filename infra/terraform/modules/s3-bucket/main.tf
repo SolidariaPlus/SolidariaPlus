@@ -45,18 +45,15 @@ variable "object_lock_days" {
   default     = 30
 }
 
-variable "force_destroy" {
-  description = "Allow deleting a non-empty bucket (QA test buckets only). Not enforced by this module; caller must empty the bucket before destroy."
-  type        = bool
-  default     = false
-}
+# No force_destroy input: the bucket itself is created with the CLI, so emptying it before a
+# destroy is the caller's job (aws s3 rm s3://<name> --recursive).
 
 data "aws_region" "current" {}
 
 locals {
   bucket_id              = var.name
   bucket_arn             = "arn:aws:s3:::${var.name}"
-  bucket_regional_domain = "${var.name}.s3.${data.aws_region.current.name}.amazonaws.com"
+  bucket_regional_domain = "${var.name}.s3.${data.aws_region.current.region}.amazonaws.com"
 }
 
 resource "aws_s3_bucket_versioning" "this" {
